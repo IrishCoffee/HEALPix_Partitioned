@@ -1,6 +1,6 @@
 #include "geometry_cal.h"
 
-__device__ double radians(double degree)
+__host__ __device__ double radians(double degree)
 {
   return degree * pi / 180.0;
 }

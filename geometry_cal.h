@@ -7,7 +7,7 @@
 #include <cmath>
 #include "vec3.h"
 
-__device__ double radians(double degree);
+__host__ __device__ double radians(double degree);
 __device__ double dotProduct(Vec3 &v1, Vec3 &v2);
 __device__ void crossProduct(Vec3 &v1, Vec3 &v2,Vec3 &v);
 __device__ double v_angle(Vec3 &v1, Vec3 &v2);

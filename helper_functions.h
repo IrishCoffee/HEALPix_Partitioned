@@ -14,6 +14,15 @@ void readDataFile(char *fileName,double ra[],double dec[],int N)
 		fscanf(fd,"%lf%lf%*d",&ra[i],&dec[i]);
 	fclose(fd);
 }
+
+void readSampleData(char *fileName,PIX_NODE sam_node[],int N)
+{
+	FILE * fd = fopen(fileName,"r");
+	for(int i = 0; i < N; ++i)
+		fscanf(fd,"%lf%lf%*d",&sam_node[i].ra,&sam_node[i].dec);
+	fclose(fd);
+}
+
 void readRefFile(char * tableList,int N)
 {
 	FILE *fd = fopen(tableList,"r");
@@ -21,5 +30,18 @@ void readRefFile(char * tableList,int N)
 		fscanf(fd,"%s",ref_table[i]);
 	fclose(fd);
 }
+
+void readSamFile(char *tableList,int N)
+{
+	FILE *fd = fopen(tableList,"r");
+	for(int i = 0; i < N; ++i)
+		fscanf(fd,"%s",sam_table[i]);
+	fclose(fd);
+}
+bool cmp(PIX_NODE node_a,PIX_NODE node_b)
+{
+	    return node_a.pix < node_b.pix;
+}
+
 
 #endif

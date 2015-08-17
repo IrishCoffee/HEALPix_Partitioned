@@ -27,17 +27,17 @@ struct Point
 class Healpix_Base
 {
   public:
-	__host__ __device__ Healpix_Base();
-	__host__ __device__ Healpix_Base(int order_);
-	__host__ __device__ void set_order(int order_);
-	__host__ __device__ int zphi2pix(double z, double phi);
-	__host__ __device__ double fmodulo(double v1, double v2);
-	__host__ __device__ int spread_bits(int v);
-	__host__ __device__ int compress_bits(int v);
-	__host__ __device__ int xyf2nest(int ix,int iy, int face_num);
-	__host__ __device__ void nest2xyf(int pix, int &ix, int &iy, int &face_num);
-	__host__ __device__ void pix2loc(int pix, double &z, double &phi, double &sth, bool &have_sth);
-	__host__ __device__ void pix2zphi(int pix, double &z, double &phi);
+	__device__ Healpix_Base();
+	__device__ Healpix_Base(int order_);
+	__device__ void set_order(int order_);
+	__device__ int zphi2pix(double z, double phi);
+	__device__ double fmodulo(double v1, double v2);
+	__device__ int spread_bits(int v);
+	__device__ int compress_bits(int v);
+	__device__ int xyf2nest(int ix,int iy, int face_num);
+	__device__ void nest2xyf(int pix, int &ix, int &iy, int &face_num);
+	__device__ void pix2loc(int pix, double &z, double &phi, double &sth, bool &have_sth);
+	__device__ void pix2zphi(int pix, double &z, double &phi);
 	__device__ double max_pixrad();
   
 	int order;

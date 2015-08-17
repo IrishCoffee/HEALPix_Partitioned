@@ -1,6 +1,6 @@
 #include "healpix_base.h"
 
-  __host__ __device__
+  __device__
 Healpix_Base::Healpix_Base()
 {
   order = 13;
@@ -12,7 +12,7 @@ Healpix_Base::Healpix_Base()
   fact1 = (Nside << 1) * fact2;
 }
 
-  __host__ __device__
+  __device__
 Healpix_Base::Healpix_Base(int order_)
 {
   order = order_;
@@ -24,7 +24,7 @@ Healpix_Base::Healpix_Base(int order_)
   fact1 = (Nside << 1) * fact2;
 }
 
-  __host__ __device__
+  __device__
 void Healpix_Base::set_order(int order_)
 {
   order = order_;
@@ -35,7 +35,7 @@ void Healpix_Base::set_order(int order_)
   fact2 = 4.0 / Npix;
   fact1 = (Nside << 1) * fact2;
 }
-  __host__ __device__ 
+  __device__ 
 int Healpix_Base::zphi2pix(double z,double phi)
 {
   double za = fabs(z);
@@ -71,7 +71,7 @@ int Healpix_Base::zphi2pix(double z,double phi)
   }
 }
 
-  __host__ __device__ 
+  __device__ 
 double Healpix_Base::fmodulo(double v1, double v2)
 {
   if (v1 >= 0)
@@ -80,7 +80,7 @@ double Healpix_Base::fmodulo(double v1, double v2)
   return (tmp == v2) ? 0.0 : tmp;
 }
 
-  __host__ __device__ 
+  __device__ 
 int Healpix_Base::spread_bits(int v)
 {
   int v1 = v & 0xff;
@@ -88,20 +88,20 @@ int Healpix_Base::spread_bits(int v)
   return utab(v1) | (utab(v2) << 16);
 }
 
-  __host__ __device__ 
+  __device__ 
 int Healpix_Base::compress_bits(int v)
 {
   int raw = (v&0x5555) | ((v&0x55550000)>>15);
   return ctab(raw&0xff) | (ctab(raw>>8) << 4);
 }
 
-  __host__ __device__ 
+  __device__ 
 int Healpix_Base::xyf2nest(int ix,int iy,int face_num)
 {
   return (face_num << (2 * order)) + spread_bits(ix) + (spread_bits(iy) << 1);
 }
 
-  __host__ __device__
+  __device__
 void Healpix_Base::nest2xyf(int pix,int &ix,int &iy,int &face_num)
 {
   face_num = pix >> (2 * order);
@@ -110,7 +110,7 @@ void Healpix_Base::nest2xyf(int pix,int &ix,int &iy,int &face_num)
   iy = compress_bits(pix >> 1);
 }
 
-  __host__ __device__ 
+  __device__ 
 void Healpix_Base::pix2loc(int pix, double &z, double &phi, double &sth, bool &have_sth)
 {
   int jrll[12] = {2,2,2,2,3,3,3,3,4,4,4,4};
@@ -160,7 +160,7 @@ void Healpix_Base::pix2loc(int pix, double &z, double &phi, double &sth, bool &h
   return;
 }
 
-  __host__ __device__ 
+  __device__ 
 void Healpix_Base::pix2zphi(int pix, double &z, double &phi)
 {
   bool dum_b;
