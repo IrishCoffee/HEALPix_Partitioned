@@ -13,9 +13,6 @@ void worker_memory_allocation()
 
 void worker_memory_free()
 {
-	free(h_ref_ra);
-	free(h_ref_dec);
-	free(h_ref_range);
 	free(h_ref_dup_node);
 }
 
@@ -57,23 +54,34 @@ void worker_computeSI(double search_radius)
 		checkCudaErrors(cudaMemGetInfo(&free_mem,&total_mem));
 		printf("Card %d before malloc %.2lf GB, total memory %.2lf GB\n",i,free_mem * 1.0 / GBSize,total_mem * 1.0 / GBSize);
 
-		checkCudaErrors(cudaMalloc(&d_ref_ra[i],sizeof(double) * part_ref_N));
-		checkCudaErrors(cudaMalloc(&d_ref_dec[i],sizeof(double) * part_ref_N));
-		checkCudaErrors(cudaMalloc(&d_ref_range[i],sizeof(int) * part_ref_N * MAX_RANGE_PAIR));
+		double free = free_mem * 1.0 - GBSize;
+		int part_N = min(part_ref_N,(int)floor(free * 1.0 / (8 + 8 + 4 * MAX_RANGE_PAIR)));
+		int iteration = (int) ceil(part_ref_N * 1.0 / part_N);
+
+		checkCudaErrors(cudaMalloc(&d_ref_ra[i],sizeof(double) * part_N));
+		checkCudaErrors(cudaMalloc(&d_ref_dec[i],sizeof(double) * part_N));
+		checkCudaErrors(cudaMalloc(&d_ref_range[i],sizeof(int) * part_N * MAX_RANGE_PAIR));
 
 		checkCudaErrors(cudaMemGetInfo(&free_mem,&total_mem));
 		printf("Card %d After malloc %.2lf GB, total memory %.2lf GB\n",i,free_mem * 1.0 / GBSize,total_mem * 1.0 / GBSize);
 
+		for(int k = 0; k < iteration; ++k)
+		{
+			int size; 
+			if(k != iteration - 1)
+				size = part_N;
+			else
+				size = part_ref_N - k * part_N;
+			checkCudaErrors(cudaMemcpy(d_ref_ra[i],h_ref_ra + i * part_ref_N + k * part_N, size * sizeof(double), cudaMemcpyHostToDevice));
+			checkCudaErrors(cudaMemcpy(d_ref_dec[i],h_ref_dec + i * part_ref_N + k * part_N, size * sizeof(double), cudaMemcpyHostToDevice));
 
-		checkCudaErrors(cudaMemcpy(d_ref_ra[i],h_ref_ra + i * part_ref_N, part_ref_N * sizeof(double), cudaMemcpyHostToDevice));
-		checkCudaErrors(cudaMemcpy(d_ref_dec[i],h_ref_dec + i * part_ref_N, part_ref_N * sizeof(double), cudaMemcpyHostToDevice));
+			dim3 block(512);
+			dim3 grid(min(65536,size / block.x));
+			get_PixRange<<<grid,block>>>(d_ref_ra[i],d_ref_dec[i],d_ref_range[i],search_radius,size);
 
-		dim3 block(512);
-		dim3 grid(min(65536,part_ref_N / block.x));
-		get_PixRange<<<grid,block>>>(d_ref_ra[i],d_ref_dec[i],d_ref_range[i],search_radius,part_ref_N);
+			checkCudaErrors(cudaMemcpy(h_ref_range + i * part_ref_N * MAX_RANGE_PAIR + k * part_N * MAX_RANGE_PAIR, d_ref_range[i],size * MAX_RANGE_PAIR * sizeof(int), cudaMemcpyDeviceToHost));
 
-		checkCudaErrors(cudaMemcpy(h_ref_range + i * part_ref_N * MAX_RANGE_PAIR, d_ref_range[i],part_ref_N * MAX_RANGE_PAIR * sizeof(int), cudaMemcpyDeviceToHost));
-
+		}
 		checkCudaErrors(cudaMemGetInfo(&free_mem,&total_mem));
 		printf("Card %d before free %.2lf GB, total memory %.2lf GB\n",i,free_mem * 1.0 / GBSize,total_mem * 1.0 / GBSize);
 
@@ -108,14 +116,10 @@ void worker_duplicateR()
 			}
 		}
 	}
-
-	/*
-	for(int i = 0; i < 20; ++i)
-		printf("%.3lf %.3lf %d\n",h_ref_dup_node[i].ra,h_ref_dup_node[i].dec,h_ref_dup_node[i].pix);
-	*/
+	free(h_ref_ra);
+	free(h_ref_dec);
+	free(h_ref_range);
 	printf("ref_dup_N % d\n",ref_dup_N);
-	//parallel sort array h_ref_dup_node based on the HEALPix id
-	//	tbb::parallel_sort(h_ref_dup_node,h_ref_dup_node + pos,cmp);
 }
 
 void worker_countR()

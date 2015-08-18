@@ -32,10 +32,10 @@ int main(int argc, char* argv[])
 
 	if(rank == MASTER_NODE)
 	{
-		return 0;
-		master_allocation();
 
+		master_allocation();
 		gettimeofday(&start,NULL);
+		cout << "master before loadfile " << endl;
 		master_load_file(argv[2]);
 		gettimeofday(&end,NULL);
 		printf("master_load_file %.3f s \n", diffTime(start,end) * 0.001 );
@@ -50,7 +50,20 @@ int main(int argc, char* argv[])
 		gettimeofday(&end,NULL);
 		printf("master sort %.3f s \n", diffTime(start,end) * 0.001 );
 
+		int *cnt_table = (int *)malloc(sizeof(int) * cntSize);
+		memset(cnt_table,0,sizeof(cnt_table));
+		for(int i = 0; i < sam_N; ++i)
+			cnt_table[h_sam_node[i].pix]++;
+
+		int zero_cnt = 0;
+		for(int i = 0; i < cntSize; ++i)
+			if(cnt_table[i] == 0)
+				zero_cnt++;
+		cout << " master zero_cnt " << zero_cnt << endl;
+
+		free(cnt_table);
 		master_free();
+		MPI_Finalize();
 	}
 	else
 	{
@@ -76,7 +89,7 @@ int main(int argc, char* argv[])
 		printf("worker_memory_allocation %.3f s \n", diffTime(start,end) * 0.001 );
 
 		gettimeofday(&start,NULL);
-		worker_load_file(0);
+		worker_load_file(rank - 1);
 		gettimeofday(&end,NULL);
 		printf("worker_load_file %.3f s \n", diffTime(start,end) * 0.001 );
 
@@ -107,13 +120,16 @@ int main(int argc, char* argv[])
 				zeroCnt++;
 		printf("zeroCnt %d\n",zeroCnt);
 
+		/*
 		for(int i = 0; i < 200; ++i)
 			printf("%d %.3lf %.3lf %d\n",i,h_ref_dup_node[i].ra,h_ref_dup_node[i].dec,h_ref_dup_node[i].pix);
 
 		for(int i = 0; i < 20; ++i)
 			printf("pix %d cnt %d startPos %d\n",i,h_R_cnt[i],h_R_startPos[i]);
-
+*/
 
 		worker_memory_free();
+		MPI_Finalize();
 	}
+	return 0;
 }
