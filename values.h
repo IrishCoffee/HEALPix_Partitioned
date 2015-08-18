@@ -28,7 +28,10 @@ struct PIX_NODE
 };
 PIX_NODE *h_ref_dup_node;
 
+//count table information
 int *h_R_cnt;
+int *h_R_cnt_merged;
+int *h_R_cnt_recv;
 int *h_R_startPos;
 
 double *d_ref_ra[GPU_N],*d_ref_dec[GPU_N];

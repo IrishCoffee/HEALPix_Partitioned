@@ -139,4 +139,28 @@ void worker_countR()
 		pre_pix = pix;
 	}
 }
+
+void worker_merge_step1(int rank)
+{
+	MPI_Status status;
+	if(rank % 2) //odd worker send to even worker
+	{
+		MPI_Send(h_R_cnt, cntSize, MPI_INT, rank + 1, 3, MPI_COMM_WORLD);
+		printf("node-%d send h_R_cnt to node-%d successfully\n",rank,rank +1);
+	}
+	else
+	{
+		h_R_cnt_recv = (int*)malloc(sizeof(int) * cntSize);
+		MPI_Recv(h_R_cnt_recv, cntSize,MPI_INT,rank - 1,3,MPI_COMM_WORLD,&status);
+		
+		printf("node-%d recv h_R_cnt from node-%d successfully\n",rank,rank -1 );
+		
+		h_R_cnt_merged = (int*)malloc(sizeof(int) * cntSize);
+		for(int i = 0; i < cntSize; ++i)
+			h_R_cnt_merged[i] = h_R_cnt[i] + h_R_cnt_recv[i];
+
+		for(int i = 0; i < 20; ++i)
+			printf("%d cnt %d\n",i,h_R_cnt_merged[i]);
+	}
+}
 #endif

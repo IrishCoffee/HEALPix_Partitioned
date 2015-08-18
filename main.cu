@@ -86,33 +86,33 @@ int main(int argc, char* argv[])
 		gettimeofday(&start,NULL);
 		worker_memory_allocation();
 		gettimeofday(&end,NULL);
-		printf("worker_memory_allocation %.3f s \n", diffTime(start,end) * 0.001 );
+		printf("%s worker_memory_allocation %.3f s \n",processor_name, diffTime(start,end) * 0.001 );
 
 		gettimeofday(&start,NULL);
 		worker_load_file(rank - 1);
 		gettimeofday(&end,NULL);
-		printf("worker_load_file %.3f s \n", diffTime(start,end) * 0.001 );
+		printf("%s worker_load_file %.3f s \n", processor_name,diffTime(start,end) * 0.001 );
 
 		gettimeofday(&start,NULL);
 		worker_computeSI(search_radius);
 		gettimeofday(&end,NULL);
-		printf("worker_computeSI %.3f s \n", diffTime(start,end) * 0.001 );
+		printf("%s worker_computeSI %.3f s \n", processor_name,diffTime(start,end) * 0.001 );
 
 		ref_dup_N = 0;
 		gettimeofday(&start,NULL);
 		worker_duplicateR();
 		gettimeofday(&end,NULL);
-		printf("worker_duplicateR %.3f s \n", diffTime(start,end) * 0.001 );
+		printf("%s worker_duplicateR %.3f s \n", processor_name,diffTime(start,end) * 0.001 );
 
 		gettimeofday(&start,NULL);
 		tbb::parallel_sort(h_ref_dup_node,h_ref_dup_node + ref_dup_N,cmp);
 		gettimeofday(&end,NULL);
-		printf("tbb sort R by key %.3f s \n", diffTime(start,end) * 0.001 );
+		printf("%s tbb sort R by key %.3f s \n", processor_name,diffTime(start,end) * 0.001 );
 
 		gettimeofday(&start,NULL);
 		worker_countR();
 		gettimeofday(&end,NULL);
-		printf("worker_countR %.3f s \n", diffTime(start,end) * 0.001 );
+		printf("%s worker_countR %.3f s \n",processor_name, diffTime(start,end) * 0.001 );
 
 		int zeroCnt = 0;
 		for(int i = 0; i < cntSize; ++i)
@@ -120,13 +120,16 @@ int main(int argc, char* argv[])
 				zeroCnt++;
 		printf("zeroCnt %d\n",zeroCnt);
 
-		/*
-		for(int i = 0; i < 200; ++i)
+		for(int i = 0; i < 20; ++i)
 			printf("%d %.3lf %.3lf %d\n",i,h_ref_dup_node[i].ra,h_ref_dup_node[i].dec,h_ref_dup_node[i].pix);
 
 		for(int i = 0; i < 20; ++i)
 			printf("pix %d cnt %d startPos %d\n",i,h_R_cnt[i],h_R_startPos[i]);
-*/
+
+		gettimeofday(&start,NULL);
+		worker_merge_step1(rank);
+		gettimeofday(&end,NULL);
+		printf("%s worker_merge %.3f s \n", processor_name,diffTime(start,end) * 0.001 );
 
 		worker_memory_free();
 		MPI_Finalize();
