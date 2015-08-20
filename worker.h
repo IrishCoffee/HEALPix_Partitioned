@@ -20,7 +20,6 @@ void worker_load_file(int workerID)
 {
 	char table[20][64];
 	strcpy(table[0],ref_table[workerID * 2]);
-	int len = strlen(table[0]);
 	int offset = ref_N / 2 / 20;
 
 	omp_set_num_threads(20);
@@ -28,13 +27,16 @@ void worker_load_file(int workerID)
 	{
 		int i = omp_get_thread_num() % 20;
 		strcpy(table[i],ref_table[workerID * 2]);
+		int len = strlen(table[i]);
 		table[i][len-1] += i;
-		readDataFile(table[i],h_ref_ra + i * offset,h_ref_dec + i * offset,offset);
-
+		if(readDataFile(table[i],h_ref_ra + i * offset,h_ref_dec + i * offset,offset) == -1)
+			printf("load file %s error!\n",table[i]);
 		//load the second directory
 		strcpy(table[i],ref_table[workerID * 2 + 1]);
+		len = strlen(table[i]);
 		table[i][len-1] += i;
-		readDataFile(table[i],h_ref_ra + (i + 20) * offset,h_ref_dec + (i + 20) * offset,offset);
+		if(readDataFile(table[i],h_ref_ra + (i + 20) * offset,h_ref_dec + (i + 20) * offset,offset) == -1)
+			printf("load file %s error!\n",table[i]);
 	}
 	return;
 }
@@ -152,9 +154,9 @@ void worker_merge_step1(int rank)
 	{
 		h_R_cnt_recv = (int*)malloc(sizeof(int) * cntSize);
 		MPI_Recv(h_R_cnt_recv, cntSize,MPI_INT,rank - 1,3,MPI_COMM_WORLD,&status);
-		
+
 		printf("node-%d recv h_R_cnt from node-%d successfully\n",rank,rank -1 );
-		
+
 		h_R_cnt_merged = (int*)malloc(sizeof(int) * cntSize);
 		for(int i = 0; i < cntSize; ++i)
 			h_R_cnt_merged[i] = h_R_cnt[i] + h_R_cnt_recv[i];

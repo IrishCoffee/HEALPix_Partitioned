@@ -115,21 +115,31 @@ int main(int argc, char* argv[])
 		printf("%s worker_countR %.3f s \n",processor_name, diffTime(start,end) * 0.001 );
 
 		int zeroCnt = 0;
+		int sum = 0;
 		for(int i = 0; i < cntSize; ++i)
+		{
+			sum += h_R_cnt[i];
 			if(h_R_cnt[i] == 0)
 				zeroCnt++;
-		printf("zeroCnt %d\n",zeroCnt);
+		}
+		printf("sum %d zeroCnt %d percent %.3lf \n",sum,zeroCnt,zeroCnt * 100.0 / cntSize);
 
+		/*
 		for(int i = 0; i < 20; ++i)
 			printf("%d %.3lf %.3lf %d\n",i,h_ref_dup_node[i].ra,h_ref_dup_node[i].dec,h_ref_dup_node[i].pix);
 
 		for(int i = 0; i < 20; ++i)
 			printf("pix %d cnt %d startPos %d\n",i,h_R_cnt[i],h_R_startPos[i]);
-
+*/
 		gettimeofday(&start,NULL);
 		worker_merge_step1(rank);
 		gettimeofday(&end,NULL);
 		printf("%s worker_merge %.3f s \n", processor_name,diffTime(start,end) * 0.001 );
+
+		freopen(processor_name,"w",stdout);
+		for(int i = 0; i < cntSize; ++i)
+			printf("%d\n",h_R_cnt[i]);
+		fclose(stdout);
 
 		worker_memory_free();
 		MPI_Finalize();
