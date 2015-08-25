@@ -41,15 +41,15 @@ void readFile(char *file,int N, NODE nn[])
 		fscanf(fd,"%d%lf%lf",&nn[i].pix,&nn[i].ra,&nn[i].dec);
 	fclose(fd);
 }
-
-	__global__ 
-void test(NODE sam_node[])
+	__global__
+void kernel_singleCM(NODE *ref_node, int ref_N, NODE *sam_node, int sam_N, int *sam_match,int *sam_matchedCnt)
 {
-	int td = blockDim.x * blockIdx.x + threadIdx.x;
-	if(td)
-		return;
-	for(int i = 0; i < 10; ++i)
-		printf("%d %lf %lf\n",sam_node[i].pix,sam_node[i].ra,sam_node[i].dec);
+	__shared__ int sam_pix[1024];
+	__shared__ double sam_ra[1024];
+	__shared__ double sam_dec[1024];
+	__shared__ int sam_cnt[1024];
+	sam_cnt[threadIdx.x] = 0;
+
 
 }
 
@@ -62,8 +62,27 @@ int begin_index(int key, NODE *node, int N)
 			return i;
 	return N;
 }
-void singleCM(NODE ref_node[], int ref_N, NODE sam_node[], int sam_N, int sam_match[],int sam_matchedCnt[])
+
+	__host__ __device__
+int binary_search(int key, NODE *node, int N)
 {
+	int st = 0;
+	int ed = N - 1;
+	while(st < ed)
+	{
+		int mid = st + ((ed - st) >> 1);
+		if(node[mid].pix <= key)
+			st = mid + 1;
+		else
+			ed = mid;
+	}
+	if(node[ed].pix > key)
+		return ed;
+	return -1;
+}
+void singleCM(NODE h_ref_node[], int ref_N, NODE h_sam_node[], int sam_N, int h_sam_match[],int h_sam_matchedCnt[])
+{
+	//the maximum number of sample points that can be matched each time by each card
 	int part_sam_N = 50000000;
 	int part_ref_N = 8 * part_sam_N;
 
@@ -71,29 +90,14 @@ void singleCM(NODE ref_node[], int ref_N, NODE sam_node[], int sam_N, int sam_ma
 	NODE *d_sam_node[2];
 	int *d_sam_match[2], *d_sam_matchedCnt[2];
 
-		cout << "part_sam_N " << part_sam_N << endl;
-
-		for(int j = 0; j < sam_N; j += part_sam_N)
-		{
-			printf("\n\n start point %d\n",j);
-			int key = sam_node[j].pix;
-			int pos = begin_index(key - 1,ref_node,ref_N);
-			printf("key %d from %d \n",key,pos);
-			
-			int end = j + part_sam_N - 1;
-			if(end >= sam_N)
-				end = sam_N - 1;
-
-			key = sam_node[end].pix;
-			int pos2 = begin_index(key,ref_node,ref_N);
-			printf("key %d end %d\n",key,pos2);
-			cout << "gap " << pos2 - pos << endl;
-		}
-
-	omp_set_num_threads(2);
+	/*
+	   omp_set_num_threads(2);
 #pragma omp parallel
+{
+int i = omp_get_thread_num() % GPU_N;
+	 */
+	for(int i = 0; i < GPU_N; ++i)
 	{
-		int i = omp_get_thread_num() % GPU_N;
 		checkCudaErrors(cudaSetDevice(i));
 		checkCudaErrors(cudaDeviceReset());
 
@@ -106,10 +110,62 @@ void singleCM(NODE ref_node[], int ref_N, NODE sam_node[], int sam_N, int sam_ma
 		checkCudaErrors(cudaMalloc(&d_sam_node[i],sizeof(NODE) * part_sam_N));
 		checkCudaErrors(cudaMalloc(&d_sam_match[i],sizeof(int) * part_sam_N  * 5));
 		checkCudaErrors(cudaMalloc(&d_sam_matchedCnt[i],sizeof(int) * part_sam_N));
+		checkCudaErrors(cudaMemset(d_sam_matchedCnt[i],0,sizeof(int) * part_sam_N));
 
 		checkCudaErrors(cudaMemGetInfo(&free_mem,&total_mem));
 		printf("Card %d after malloc %.2lf GB, total memory %.2lf GB\n",i,free_mem * 1.0 / GBSize,total_mem * 1.0 / GBSize);
 
+		//the total number of sample points processed by this card
+		int card_sam_N;
+		if(i == GPU_N - 1)
+			card_sam_N = sam_N - i * sam_N / GPU_N;
+		else
+			card_sam_N = sam_N / GPU_N;
+
+		int iteration = ceil(card_sam_N * 1.0 / part_sam_N);
+
+		for(int ite = 0; ite < iteration; ++ite)
+		{
+			int cur_sam_N;
+			if(ite == iteration - 1) // the last round
+				cur_sam_N = card_sam_N - ite * part_sam_N;
+			else
+				cur_sam_N = part_sam_N;
+
+			int start_sam_pos = ite * part_sam_N + i * sam_N / GPU_N;
+			int end_sam_pos = start_sam_pos + cur_sam_N - 1;
+
+			int start_pix = h_sam_node[start_sam_pos].pix;
+			int end_pix = h_sam_node[end_sam_pos].pix;
+
+			int start_ref_pos;
+			if(start_pix == 0)
+				start_ref_pos = 0;
+			else
+				//		start_ref_pos = begin_index(start_pix - 1,h_ref_node,ref_N);
+				start_ref_pos = binary_search(start_pix - 1,h_ref_node,ref_N);
+
+			//no reference point need to be matched
+			if(start_ref_pos == -1)
+				break;
+			//	int end_ref_pos = begin_index(end_pix,h_ref_node,ref_N) - 1;
+			int end_ref_pos = binary_search(end_pix,h_ref_node,ref_N) - 1;
+			if(end_ref_pos == -2)
+				end_ref_pos = ref_N - 1;
+			int cur_ref_N = end_ref_pos - start_ref_pos + 1;
+
+			dim3 block(1024);
+			dim3 grid(min(65536,(int)ceil(cur_sam_N * 1.0 / block.x)));
+
+			printf("\n\nCard %d iteration %d\n",i,ite);
+			printf("block.x %d grid.x %d\n",block.x,grid.x);
+			printf("start_sam_pos %d start_sam_pix %d end_sam_pos %d end_sam_pix %d sam_N %d\n",start_sam_pos,start_pix,end_sam_pos,end_pix,cur_sam_N);
+			printf("start_ref_pos %d start_ref_pix %d end_ref_pos %d end_ref_pix %d ref_N %d\n",start_ref_pos,h_ref_node[start_ref_pos].pix,end_ref_pos,h_ref_node[end_ref_pos].pix,cur_ref_N);
+
+			checkCudaErrors(cudaMemcpy(d_sam_node[i],h_sam_node + start_sam_pos,cur_sam_N * sizeof(NODE),cudaMemcpyHostToDevice));
+			checkCudaErrors(cudaMemcpy(d_ref_node[i],h_ref_node + start_ref_pos,cur_ref_N * sizeof(NODE), cudaMemcpyHostToDevice));
+			kernel_singleCM<<<grid,block>>>(d_ref_node,cur_ref_N,d_sam_node,cur_sam_N,d_sam_match,d_sam_matchedCnt);
+		}
 	}
 }
 
