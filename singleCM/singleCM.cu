@@ -41,19 +41,6 @@ void readFile(char *file,int N, NODE nn[])
 		fscanf(fd,"%d%lf%lf",&nn[i].pix,&nn[i].ra,&nn[i].dec);
 	fclose(fd);
 }
-	__global__
-void kernel_singleCM(NODE *ref_node, int ref_N, NODE *sam_node, int sam_N, int *sam_match,int *sam_matchedCnt)
-{
-	__shared__ int sam_pix[1024];
-	__shared__ double sam_ra[1024];
-	__shared__ double sam_dec[1024];
-	__shared__ int sam_cnt[1024];
-	sam_cnt[threadIdx.x] = 0;
-
-
-}
-
-// return the position of the first element whose pix is greater than key
 	__host__ __device__
 int begin_index(int key, NODE *node, int N)
 {
@@ -80,6 +67,62 @@ int binary_search(int key, NODE *node, int N)
 		return ed;
 	return -1;
 }
+	__global__
+void kernel_singleCM(NODE *ref_node, int ref_N, NODE *sam_node, int sam_N, int *sam_match,int *sam_matchedCnt)
+{
+	__shared__ int sam_pix[1024];
+	__shared__ double sam_ra[1024];
+	__shared__ double sam_dec[1024];
+	__shared__ int sam_cnt[1024];
+
+	__shared__ int start_pix,end_pix;
+	__shared__ int start_ref_pos,end_ref_pos;
+	__shared__ int block_sam_N,block_ref_N;
+	__shared__ int tmp_start,tmp_end;
+
+	int tid = blockIdx.x * blockDim.x + threadIdx.x;
+	if(tid < sam_N)
+	{
+		sam_cnt[threadIdx.x] = 0;
+		sam_pix[threadIdx.x] = sam_node[tid].pix;
+		sam_ra[threadIdx.x] = sam_node[tid].ra;
+		sam_dec[threadIdx.x] = sam_node[tid].dec;
+	}
+	if(threadIdx.x == 0)
+	{
+		if(blockIdx.x == gridDim.x - 1)
+			block_sam_N = sam_N - blockIdx.x * blockDim.x;
+		else
+			block_sam_N = blockDim.x;
+
+		start_pix = sam_pix[0];
+		end_pix = sam_pix[block_sam_N - 1];
+
+		if(start_pix == 0)
+			start_ref_pos = 0;
+		else
+			start_ref_pos = binary_search(start_pix - 1,ref_node,ref_N);
+
+		tmp_start = begin_index(start_pix - 1,ref_node,ref_N);
+		if(start_pix == 0)
+			tmp_start = 0;
+		tmp_end = begin_index(end_pix,ref_node,ref_N) - 1;
+
+		end_ref_pos = binary_search(end_pix,ref_node,ref_N) - 1;
+		if(end_ref_pos == -2)
+			end_ref_pos = ref_N - 1;
+
+		block_ref_N = end_ref_pos - start_ref_pos + 1;
+	}
+	syncthreads();
+	if(threadIdx.x == 0  && blockIdx.x < 5)
+		//	printf("\n\nstart_sam_pix %d end_sam_pix %d \nstart_ref_pix %d end_ref_pix %d\ntmp_start_pix %d tmp_end_pix %d\nstart_ref_pos %d end_ref_pos %d\ntmp_start %d tmp_end %d\nblock_sam_N %d block_ref_N %d\n",start_pix,end_pix,ref_node[start_ref_pos].pix,ref_node[end_ref_pos].pix,ref_node[tmp_start].pix,ref_node[tmp_end].pix,start_ref_pos,end_ref_pos,tmp_start,tmp_end,block_sam_N,block_ref_N);
+	{
+		printf("\n\nstart_sam_pix %d end_sam_pix %d \nstart_ref_pix %d end_ref_pix %d\ntmp_start_pix %d tmp_end_pix %d\n",start_pix,end_pix,ref_node[start_ref_pos].pix,ref_node[end_ref_pos].pix,ref_node[tmp_start].pix,ref_node[tmp_end].pix);
+		printf("start_ref_pos %d end_ref_pos %d\ntmp_start %d tmp_end %d\nblock_sam_N %d block_ref_N %d\n",start_ref_pos,end_ref_pos,tmp_start,tmp_end,block_sam_N,block_ref_N);
+	}
+}
+
 void singleCM(NODE h_ref_node[], int ref_N, NODE h_sam_node[], int sam_N, int h_sam_match[],int h_sam_matchedCnt[])
 {
 	//the maximum number of sample points that can be matched each time by each card
@@ -164,7 +207,7 @@ int i = omp_get_thread_num() % GPU_N;
 
 			checkCudaErrors(cudaMemcpy(d_sam_node[i],h_sam_node + start_sam_pos,cur_sam_N * sizeof(NODE),cudaMemcpyHostToDevice));
 			checkCudaErrors(cudaMemcpy(d_ref_node[i],h_ref_node + start_ref_pos,cur_ref_N * sizeof(NODE), cudaMemcpyHostToDevice));
-			kernel_singleCM<<<grid,block>>>(d_ref_node,cur_ref_N,d_sam_node,cur_sam_N,d_sam_match,d_sam_matchedCnt);
+			kernel_singleCM<<<grid,block>>>(d_ref_node[i],cur_ref_N,d_sam_node[i],cur_sam_N,d_sam_match[i],d_sam_matchedCnt[i]);
 		}
 	}
 }
