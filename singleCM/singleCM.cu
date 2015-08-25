@@ -57,67 +57,38 @@ void test(NODE sam_node[])
 	__host__ __device__
 int begin_index(int key, NODE *node, int N)
 {
-	int low = 0;
-	int high = N - 1;
-	while(low <= high)
-	{   
-		int mid = (low + high) >> 1;
-		int midVal = node[mid].pix;
-		if(midVal < key)
-			low = mid + 1;
-		else if(midVal > key)
-		{   
-			if(mid != 0 && node[mid-1].pix < key)
-				return mid;
-			if(mid == 0)
-				return mid;
-			high = mid - 1;
-		}   
-		else
-		{   
-			if(mid != 0 && node[mid-1].pix == key)
-				high = mid - 1;
-			else
-				return mid;
-		}   
-	}   
-	return -1; 
+	for(int i = 0; i < N; ++i)
+		if(node[i].pix > key)
+			return i;
+	return N;
 }
 void singleCM(NODE ref_node[], int ref_N, NODE sam_node[], int sam_N, int sam_match[],int sam_matchedCnt[])
 {
-	int part_sam_N = 100000000;
-	int part_ref_N = 100000000;
+	int part_sam_N = 50000000;
+	int part_ref_N = 8 * part_sam_N;
 
 	NODE *d_ref_node[2];
 	NODE *d_sam_node[2];
 	int *d_sam_match[2], *d_sam_matchedCnt[2];
 
-	for(int j = 0; j < sam_N; j += part_sam_N)
-	{
-		int key = sam_node[j].pix;
-		int pos = begin_index(key,ref_node,ref_N);
-		printf("key %d from %d \n",key,pos);
+		cout << "part_sam_N " << part_sam_N << endl;
 
-		cout << ref_node[pos-1].pix << endl;
-		cout << ref_node[pos].pix << endl;
-		cout << ref_node[pos+1].pix << endl;
-		
-		cout << endl;
-		int end = j + part_sam_N - 1;
-		if(end >= sam_N)
-			end = sam_N - 1;
+		for(int j = 0; j < sam_N; j += part_sam_N)
+		{
+			printf("\n\n start point %d\n",j);
+			int key = sam_node[j].pix;
+			int pos = begin_index(key - 1,ref_node,ref_N);
+			printf("key %d from %d \n",key,pos);
+			
+			int end = j + part_sam_N - 1;
+			if(end >= sam_N)
+				end = sam_N - 1;
 
-		key = sam_node[end].pix;
-		int pos2 = begin_index(key,ref_node,ref_N);
-		printf("key %d end %d\n",key,pos2);
-		
-		cout << ref_node[pos2-1].pix << endl;
-		cout << ref_node[pos2].pix << endl;
-		cout << ref_node[pos2+1].pix << endl;
-		
-		cout << "gap " << pos2 - pos << endl;
-		cout << "--------------------------------" << endl;
-	}
+			key = sam_node[end].pix;
+			int pos2 = begin_index(key,ref_node,ref_N);
+			printf("key %d end %d\n",key,pos2);
+			cout << "gap " << pos2 - pos << endl;
+		}
 
 	omp_set_num_threads(2);
 #pragma omp parallel
@@ -201,7 +172,7 @@ int main(int argc, char *argv[])
 
 	time(&rawtime);
 	printf("after sort : %s\n",ctime(&rawtime));
-	
+
 	singleCM(ref_node,ref_N,sam_node,sam_N,sam_match,sam_matchedCnt);
 	time(&rawtime);
 	printf("singleCM : %s\n",ctime(&rawtime));
