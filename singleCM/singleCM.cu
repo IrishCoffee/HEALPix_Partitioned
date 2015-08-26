@@ -14,13 +14,14 @@
 #include <device_launch_parameters.h>
 #include <helper_cuda.h>
 using namespace std;
-
+const double pi=3.141592653589793238462643383279502884197;
 int ref_line[20];
 char ref_file[20][16];
 int sam_line[20];
 char sam_file[20][16];
 const int GPU_N = 2;
 const int GBSize = 1024 * 1024 * 1024;
+const int block_size = 512;
 struct NODE
 {
 	double ra,dec;
@@ -72,7 +73,7 @@ __host__ __device__ double radians(double degree)
 	return degree * pi / 180.0;
 }
 	__device__
-boal matched(double ra1,double dec1,double ra2,double dec2,double radius)
+bool matched(double ra1,double dec1,double ra2,double dec2,double radius)
 {
 	double z1 = sin(radians(dec1));
 	double x1 = cos(radians(dec1)) * cos(radians(ra1));
@@ -90,12 +91,12 @@ boal matched(double ra1,double dec1,double ra2,double dec2,double radius)
 	return false;
 }
 	__global__
-void kernel_singleCM(NODE *ref_node, int ref_N, NODE *sam_node, int sam_N, int *sam_match,int *sam_matchedCnt)
+void kernel_singleCM(NODE *ref_node, int ref_N, NODE *sam_node, int sam_N, int *sam_match,int *sam_matchedCnt,int ref_offset,int sam_offset)
 {
-	__shared__ int sam_pix[1024];
-	__shared__ double sam_ra[1024];
-	__shared__ double sam_dec[1024];
-	__shared__ int sam_cnt[1024];
+	__shared__ int sam_pix[block_size];
+	__shared__ double sam_ra[block_size];
+	__shared__ double sam_dec[block_size];
+	__shared__ int sam_cnt[block_size];
 
 	__shared__ int start_pix,end_pix;
 	__shared__ int start_ref_pos,end_ref_pos;
@@ -134,52 +135,58 @@ void kernel_singleCM(NODE *ref_node, int ref_N, NODE *sam_node, int sam_N, int *
 	syncthreads();
 	if(start_ref_pos == -1)
 		return;
+	if(threadIdx.x == 0  && blockIdx.x >= 5 && blockIdx.x < 10)
+		printf("\n\nblock %d start_sam_pix %d end_sam_pix %d \\\ start_ref_pix %d end_ref_pix %d \\\ start_ref_pos %d end_ref_pos %d \\\ block_sam_N %d block_ref_N %d\n",blockIdx.x,start_pix,end_pix,ref_node[start_ref_pos].pix,ref_node[end_ref_pos].pix,start_ref_pos,end_ref_pos,block_sam_N,block_ref_N);
 
+	
 	int pos = threadIdx.x + start_ref_pos;
+	int pix;
+	double ref_ra,ref_dec;
+
 	while(pos < end_ref_pos)
 	{
-		int pix = ref_node[pos].pix;
-		double ref_ra = ref_node[pos].ra;
-		double ref_dec = ref_node[pos].dec;
+		pix = ref_node[pos].pix;
+		ref_ra = ref_node[pos].ra;
+		ref_dec = ref_node[pos].dec;
 		for(int i = 0; i < block_sam_N; ++i)
 		{
 			if(sam_pix[i] < pix)
 				continue;
 			if(sam_pix[i] > pix)
 				break;
-			if(matched(sam_ra[i],sam_dec[i],ref_ra,ref_dec,radius))
+			if(matched(sam_ra[i],sam_dec[i],ref_ra,ref_dec,0.0056))
 			{
-
+				if(threadIdx.x == 0)
+					printf("sam ra %.6lf dec %.6lf ref ra %.6lf dec %.6lf\n",sam_ra[i],sam_dec[i],ref_ra,ref_dec);
+				/*
+				int cur = atomicAdd(&sam_cnt[i],1);
+				if(cur < 5)
+					sam_match[blockIdx.x * blockDim.x * 5 + i * 5 + cur] = pos + ref_offset;
+				*/
 			}
 		}
+		pos += blockDim.x;
 	}
+	__syncthreads();
+	if(tid < sam_N)
+		sam_matchedCnt[tid] = sam_cnt[threadIdx.x];
 }
-/*
-   if(threadIdx.x == 0  && blockIdx.x >= 5 && blockIdx.x < 10)
-   {
-   printf("\n\nblock %d start_sam_pix %d end_sam_pix %d \\\ start_ref_pix %d end_ref_pix %d \\\ start_ref_pos %d end_ref_pos %d \\\ block_sam_N %d block_ref_N %d\n",blockIdx.x,start_pix,end_pix,ref_node[start_ref_pos].pix,ref_node[end_ref_pos].pix,start_ref_pos,end_ref_pos,block_sam_N,block_ref_N);
-   }
- */
 
 
 void singleCM(NODE h_ref_node[], int ref_N, NODE h_sam_node[], int sam_N, int h_sam_match[],int h_sam_matchedCnt[])
 {
 	//the maximum number of sample points that can be matched each time by each card
-	int part_sam_N = 50000000;
+	int part_sam_N = 25000000;
 	int part_ref_N = 8 * part_sam_N;
 
 	NODE *d_ref_node[2];
 	NODE *d_sam_node[2];
 	int *d_sam_match[2], *d_sam_matchedCnt[2];
 
-	/*
-	   omp_set_num_threads(2);
+	omp_set_num_threads(2);
 #pragma omp parallel
-{
-int i = omp_get_thread_num() % GPU_N;
-	 */
-	for(int i = 0; i < GPU_N; ++i)
 	{
+		int i = omp_get_thread_num() % GPU_N;
 		checkCudaErrors(cudaSetDevice(i));
 		checkCudaErrors(cudaDeviceReset());
 
@@ -224,19 +231,16 @@ int i = omp_get_thread_num() % GPU_N;
 			if(start_pix == 0)
 				start_ref_pos = 0;
 			else
-				//		start_ref_pos = begin_index(start_pix - 1,h_ref_node,ref_N);
 				start_ref_pos = binary_search(start_pix - 1,h_ref_node,ref_N);
 
-			//no reference point need to be matched
 			if(start_ref_pos == -1)
 				break;
-			//	int end_ref_pos = begin_index(end_pix,h_ref_node,ref_N) - 1;
 			int end_ref_pos = binary_search(end_pix,h_ref_node,ref_N) - 1;
 			if(end_ref_pos == -2)
 				end_ref_pos = ref_N - 1;
 			int cur_ref_N = end_ref_pos - start_ref_pos + 1;
 
-			dim3 block(1024);
+			dim3 block(block_size);
 			dim3 grid(min(65536,(int)ceil(cur_sam_N * 1.0 / block.x)));
 
 			printf("\n\nCard %d iteration %d\n",i,ite);
@@ -246,14 +250,23 @@ int i = omp_get_thread_num() % GPU_N;
 
 			checkCudaErrors(cudaMemcpy(d_sam_node[i],h_sam_node + start_sam_pos,cur_sam_N * sizeof(NODE),cudaMemcpyHostToDevice));
 			checkCudaErrors(cudaMemcpy(d_ref_node[i],h_ref_node + start_ref_pos,cur_ref_N * sizeof(NODE), cudaMemcpyHostToDevice));
-			kernel_singleCM<<<grid,block>>>(d_ref_node[i],cur_ref_N,d_sam_node[i],cur_sam_N,d_sam_match[i],d_sam_matchedCnt[i]);
-			checkCudaErrors(cudaMemcpy(h_sam_match,d_sam_match[i],cur_sam_N * sizeof(int),cudaMemcpyDeviceToHost));
+			kernel_singleCM<<<grid,block>>>(d_ref_node[i],cur_ref_N,d_sam_node[i],cur_sam_N,d_sam_match[i],d_sam_matchedCnt[i],start_ref_pos,start_sam_pos);
+			//			checkCudaErrors(cudaMemcpy(h_sam_matchedCnt + start_sam_pos,d_sam_matchedCnt[i],cur_sam_N * sizeof(int),cudaMemcpyDeviceToHost));
+			//			checkCudaErrors(cudaMemcpy(h_sam_match + start_sam_pos * 5,d_sam_match[i],cur_sam_N * 5 * sizeof(int),cudaMemcpyDeviceToHost));
 		}
 	}
+	for(int i = 0; i < 5; ++i)
+	{
+		printf("%d sam_matchedCnt %d\n",i,h_sam_matchedCnt[i]);
+		printf("sam_ra %.6lf sam_dec %.6lf sam_pix %d\n",h_sam_node[i].ra,h_sam_node[i].dec,h_sam_node[i].pix);
+		for(int j = i * 5; j < i * 5 + h_sam_matchedCnt[i]; ++j)
+		{
+			int k = h_sam_match[j];
+			printf("ref_ra %.6lf ref_dec %.6lf ref_pix %d\n",h_ref_node[k].ra,h_ref_node[k].dec,h_ref_node[k].pix);
+		}
+		printf("\n\n");
+	}
 }
-
-
-
 
 int main(int argc, char *argv[])
 {
