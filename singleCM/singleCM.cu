@@ -67,6 +67,28 @@ int binary_search(int key, NODE *node, int N)
 		return ed;
 	return -1;
 }
+__host__ __device__ double radians(double degree)
+{
+	return degree * pi / 180.0;
+}
+	__device__
+boal matched(double ra1,double dec1,double ra2,double dec2,double radius)
+{
+	double z1 = sin(radians(dec1));
+	double x1 = cos(radians(dec1)) * cos(radians(ra1));
+	double y1 = cos(radians(dec1)) * sin(radians(ra1));
+
+	double z2 = sin(radians(dec2));
+	double x2 = cos(radians(dec2)) * cos(radians(ra2));
+	double y2 = cos(radians(dec2)) * sin(radians(ra2));
+
+	double distance = (x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2) + (z1 - z2) * (z1 - z2);
+	double dist2 = 4 * pow(sin(radians(0.0056 / 2)),2);
+
+	if(distance <= dist2)
+		return true;
+	return false;
+}
 	__global__
 void kernel_singleCM(NODE *ref_node, int ref_N, NODE *sam_node, int sam_N, int *sam_match,int *sam_matchedCnt)
 {
@@ -78,7 +100,6 @@ void kernel_singleCM(NODE *ref_node, int ref_N, NODE *sam_node, int sam_N, int *
 	__shared__ int start_pix,end_pix;
 	__shared__ int start_ref_pos,end_ref_pos;
 	__shared__ int block_sam_N,block_ref_N;
-	__shared__ int tmp_start,tmp_end;
 
 	int tid = blockIdx.x * blockDim.x + threadIdx.x;
 	if(tid < sam_N)
@@ -103,25 +124,43 @@ void kernel_singleCM(NODE *ref_node, int ref_N, NODE *sam_node, int sam_N, int *
 		else
 			start_ref_pos = binary_search(start_pix - 1,ref_node,ref_N);
 
-		tmp_start = begin_index(start_pix - 1,ref_node,ref_N);
-		if(start_pix == 0)
-			tmp_start = 0;
-		tmp_end = begin_index(end_pix,ref_node,ref_N) - 1;
-
-		end_ref_pos = binary_search(end_pix,ref_node,ref_N) - 1;
-		if(end_ref_pos == -2)
+		end_ref_pos = binary_search(end_pix,ref_node,ref_N);
+		if(end_ref_pos == -1)
 			end_ref_pos = ref_N - 1;
-
+		else
+			end_ref_pos--;
 		block_ref_N = end_ref_pos - start_ref_pos + 1;
 	}
 	syncthreads();
-	if(threadIdx.x == 0  && blockIdx.x < 5)
-		//	printf("\n\nstart_sam_pix %d end_sam_pix %d \nstart_ref_pix %d end_ref_pix %d\ntmp_start_pix %d tmp_end_pix %d\nstart_ref_pos %d end_ref_pos %d\ntmp_start %d tmp_end %d\nblock_sam_N %d block_ref_N %d\n",start_pix,end_pix,ref_node[start_ref_pos].pix,ref_node[end_ref_pos].pix,ref_node[tmp_start].pix,ref_node[tmp_end].pix,start_ref_pos,end_ref_pos,tmp_start,tmp_end,block_sam_N,block_ref_N);
+	if(start_ref_pos == -1)
+		return;
+
+	int pos = threadIdx.x + start_ref_pos;
+	while(pos < end_ref_pos)
 	{
-		printf("\n\nstart_sam_pix %d end_sam_pix %d \nstart_ref_pix %d end_ref_pix %d\ntmp_start_pix %d tmp_end_pix %d\n",start_pix,end_pix,ref_node[start_ref_pos].pix,ref_node[end_ref_pos].pix,ref_node[tmp_start].pix,ref_node[tmp_end].pix);
-		printf("start_ref_pos %d end_ref_pos %d\ntmp_start %d tmp_end %d\nblock_sam_N %d block_ref_N %d\n",start_ref_pos,end_ref_pos,tmp_start,tmp_end,block_sam_N,block_ref_N);
+		int pix = ref_node[pos].pix;
+		double ref_ra = ref_node[pos].ra;
+		double ref_dec = ref_node[pos].dec;
+		for(int i = 0; i < block_sam_N; ++i)
+		{
+			if(sam_pix[i] < pix)
+				continue;
+			if(sam_pix[i] > pix)
+				break;
+			if(matched(sam_ra[i],sam_dec[i],ref_ra,ref_dec,radius))
+			{
+
+			}
+		}
 	}
 }
+/*
+   if(threadIdx.x == 0  && blockIdx.x >= 5 && blockIdx.x < 10)
+   {
+   printf("\n\nblock %d start_sam_pix %d end_sam_pix %d \\\ start_ref_pix %d end_ref_pix %d \\\ start_ref_pos %d end_ref_pos %d \\\ block_sam_N %d block_ref_N %d\n",blockIdx.x,start_pix,end_pix,ref_node[start_ref_pos].pix,ref_node[end_ref_pos].pix,start_ref_pos,end_ref_pos,block_sam_N,block_ref_N);
+   }
+ */
+
 
 void singleCM(NODE h_ref_node[], int ref_N, NODE h_sam_node[], int sam_N, int h_sam_match[],int h_sam_matchedCnt[])
 {
@@ -208,6 +247,7 @@ int i = omp_get_thread_num() % GPU_N;
 			checkCudaErrors(cudaMemcpy(d_sam_node[i],h_sam_node + start_sam_pos,cur_sam_N * sizeof(NODE),cudaMemcpyHostToDevice));
 			checkCudaErrors(cudaMemcpy(d_ref_node[i],h_ref_node + start_ref_pos,cur_ref_N * sizeof(NODE), cudaMemcpyHostToDevice));
 			kernel_singleCM<<<grid,block>>>(d_ref_node[i],cur_ref_N,d_sam_node[i],cur_sam_N,d_sam_match[i],d_sam_matchedCnt[i]);
+			checkCudaErrors(cudaMemcpy(h_sam_match,d_sam_match[i],cur_sam_N * sizeof(int),cudaMemcpyDeviceToHost));
 		}
 	}
 }
