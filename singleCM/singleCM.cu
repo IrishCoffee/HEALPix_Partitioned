@@ -22,6 +22,7 @@ char sam_file[20][16];
 const int GPU_N = 2;
 const int GBSize = 1024 * 1024 * 1024;
 const int block_size = 512;
+const int TILE_SIZE = 1024;
 struct NODE
 {
 	double ra,dec;
@@ -72,7 +73,7 @@ __host__ __device__ double radians(double degree)
 {
 	return degree * pi / 180.0;
 }
-	__device__
+__host__	__device__
 bool matched(double ra1,double dec1,double ra2,double dec2,double radius)
 {
 	double z1 = sin(radians(dec1));
@@ -90,35 +91,29 @@ bool matched(double ra1,double dec1,double ra2,double dec2,double radius)
 		return true;
 	return false;
 }
-	__global__
+__global__
 void kernel_singleCM(NODE *ref_node, int ref_N, NODE *sam_node, int sam_N, int *sam_match,int *sam_matchedCnt,int ref_offset,int sam_offset)
 {
-	__shared__ int sam_pix[block_size];
-	__shared__ double sam_ra[block_size];
-	__shared__ double sam_dec[block_size];
-	__shared__ int sam_cnt[block_size];
+	__shared__ int s_ref_pix[TILE_SIZE];
+	__shared__ double s_ref_ra[TILE_SIZE];
+	__shared__ double s_ref_dec[TILE_SIZE];
 
 	__shared__ int start_pix,end_pix;
 	__shared__ int start_ref_pos,end_ref_pos;
 	__shared__ int block_sam_N,block_ref_N;
+	__shared__ int iteration;
 
-	int tid = blockIdx.x * blockDim.x + threadIdx.x;
-	if(tid < sam_N)
-	{
-		sam_cnt[threadIdx.x] = 0;
-		sam_pix[threadIdx.x] = sam_node[tid].pix;
-		sam_ra[threadIdx.x] = sam_node[tid].ra;
-		sam_dec[threadIdx.x] = sam_node[tid].dec;
-	}
+	int tid = threadIdx.x + blockIdx.x * blockDim.x;
+
 	if(threadIdx.x == 0)
 	{
-		if(blockIdx.x == gridDim.x - 1)
+		if(blockIdx.x == gridDim.x - 1) // the last block
 			block_sam_N = sam_N - blockIdx.x * blockDim.x;
 		else
 			block_sam_N = blockDim.x;
 
-		start_pix = sam_pix[0];
-		end_pix = sam_pix[block_sam_N - 1];
+		start_pix = sam_node[tid].pix;
+		end_pix = sam_node[tid + block_sam_N - 1].pix;
 
 		if(start_pix == 0)
 			start_ref_pos = 0;
@@ -131,45 +126,61 @@ void kernel_singleCM(NODE *ref_node, int ref_N, NODE *sam_node, int sam_N, int *
 		else
 			end_ref_pos--;
 		block_ref_N = end_ref_pos - start_ref_pos + 1;
+		iteration = ceil(block_ref_N * 1.0 / TILE_SIZE);
 	}
-	syncthreads();
+
+	__syncthreads();
 	if(start_ref_pos == -1)
 		return;
-	if(threadIdx.x == 0  && blockIdx.x >= 5 && blockIdx.x < 10)
-		printf("\n\nblock %d start_sam_pix %d end_sam_pix %d \\\ start_ref_pix %d end_ref_pix %d \\\ start_ref_pos %d end_ref_pos %d \\\ block_sam_N %d block_ref_N %d\n",blockIdx.x,start_pix,end_pix,ref_node[start_ref_pos].pix,ref_node[end_ref_pos].pix,start_ref_pos,end_ref_pos,block_sam_N,block_ref_N);
-
-	
-	int pos = threadIdx.x + start_ref_pos;
-	int pix;
-	double ref_ra,ref_dec;
-
-	while(pos < end_ref_pos)
+	int pix,cnt = 0;
+	double sam_ra,sam_dec;
+	if(tid < sam_N)
 	{
-		pix = ref_node[pos].pix;
-		ref_ra = ref_node[pos].ra;
-		ref_dec = ref_node[pos].dec;
-		for(int i = 0; i < block_sam_N; ++i)
+		pix = sam_node[tid].pix;
+		sam_ra = sam_node[tid].ra;
+		sam_dec = sam_node[tid].dec;
+		cnt = 0;
+	}
+
+	__syncthreads();
+	for(int ite = 0; ite < iteration; ++ite)
+	{
+		for(int k = 0; k < TILE_SIZE / blockDim.x; ++k)
 		{
-			if(sam_pix[i] < pix)
-				continue;
-			if(sam_pix[i] > pix)
-				break;
-			if(matched(sam_ra[i],sam_dec[i],ref_ra,ref_dec,0.0056))
+			int ref_pos = start_ref_pos + ite * TILE_SIZE + blockDim.x * k + threadIdx.x;
+			int s_ref_pos = blockDim.x * k + threadIdx.x;
+			if(ref_pos <= end_ref_pos)
 			{
-				if(threadIdx.x == 0)
-					printf("sam ra %.6lf dec %.6lf ref ra %.6lf dec %.6lf\n",sam_ra[i],sam_dec[i],ref_ra,ref_dec);
-				/*
-				int cur = atomicAdd(&sam_cnt[i],1);
-				if(cur < 5)
-					sam_match[blockIdx.x * blockDim.x * 5 + i * 5 + cur] = pos + ref_offset;
-				*/
+				s_ref_pix[s_ref_pos] = ref_node[ref_pos].pix;
+				s_ref_ra[s_ref_pos] = ref_node[ref_pos].ra;
+				s_ref_dec[s_ref_pos] = ref_node[ref_pos].dec;
+			}
+			else
+				s_ref_pix[s_ref_pos] = -1;
+		}
+
+		__syncthreads();
+
+		if(tid >= sam_N)
+			continue;
+
+		for(int j = 0; j < TILE_SIZE; ++j)
+		{
+			if(s_ref_pix[j] == -1 || s_ref_pix[j] > pix)
+				break;
+			if(s_ref_pix[j] < pix)
+				continue;
+			if(matched(sam_ra,sam_dec,s_ref_ra[j],s_ref_dec[j],0.0056))
+			{
+				cnt++;
+				if(cnt <= 5)
+					sam_match[tid * 5 + cnt] = ref_offset + start_ref_pos + ite * TILE_SIZE + j;
 			}
 		}
-		pos += blockDim.x;
+		__syncthreads();
 	}
-	__syncthreads();
-	if(tid < sam_N)
-		sam_matchedCnt[tid] = sam_cnt[threadIdx.x];
+
+	sam_matchedCnt[tid] = cnt;
 }
 
 
@@ -179,11 +190,11 @@ void singleCM(NODE h_ref_node[], int ref_N, NODE h_sam_node[], int sam_N, int h_
 	int part_sam_N = 25000000;
 	int part_ref_N = 8 * part_sam_N;
 
-	NODE *d_ref_node[2];
-	NODE *d_sam_node[2];
-	int *d_sam_match[2], *d_sam_matchedCnt[2];
+	NODE *d_ref_node[GPU_N];
+	NODE *d_sam_node[GPU_N];
+	int *d_sam_match[GPU_N], *d_sam_matchedCnt[GPU_N];
 
-	omp_set_num_threads(2);
+	omp_set_num_threads(GPU_N);
 #pragma omp parallel
 	{
 		int i = omp_get_thread_num() % GPU_N;
@@ -251,22 +262,12 @@ void singleCM(NODE h_ref_node[], int ref_N, NODE h_sam_node[], int sam_N, int h_
 			checkCudaErrors(cudaMemcpy(d_sam_node[i],h_sam_node + start_sam_pos,cur_sam_N * sizeof(NODE),cudaMemcpyHostToDevice));
 			checkCudaErrors(cudaMemcpy(d_ref_node[i],h_ref_node + start_ref_pos,cur_ref_N * sizeof(NODE), cudaMemcpyHostToDevice));
 			kernel_singleCM<<<grid,block>>>(d_ref_node[i],cur_ref_N,d_sam_node[i],cur_sam_N,d_sam_match[i],d_sam_matchedCnt[i],start_ref_pos,start_sam_pos);
-			//			checkCudaErrors(cudaMemcpy(h_sam_matchedCnt + start_sam_pos,d_sam_matchedCnt[i],cur_sam_N * sizeof(int),cudaMemcpyDeviceToHost));
-			//			checkCudaErrors(cudaMemcpy(h_sam_match + start_sam_pos * 5,d_sam_match[i],cur_sam_N * 5 * sizeof(int),cudaMemcpyDeviceToHost));
+			checkCudaErrors(cudaMemcpy(h_sam_matchedCnt + start_sam_pos,d_sam_matchedCnt[i],cur_sam_N * sizeof(int),cudaMemcpyDeviceToHost));
+			checkCudaErrors(cudaMemcpy(h_sam_match + start_sam_pos * 5,d_sam_match[i],cur_sam_N * 5 * sizeof(int),cudaMemcpyDeviceToHost));
 		}
-	}
-	for(int i = 0; i < 5; ++i)
-	{
-		printf("%d sam_matchedCnt %d\n",i,h_sam_matchedCnt[i]);
-		printf("sam_ra %.6lf sam_dec %.6lf sam_pix %d\n",h_sam_node[i].ra,h_sam_node[i].dec,h_sam_node[i].pix);
-		for(int j = i * 5; j < i * 5 + h_sam_matchedCnt[i]; ++j)
-		{
-			int k = h_sam_match[j];
-			printf("ref_ra %.6lf ref_dec %.6lf ref_pix %d\n",h_ref_node[k].ra,h_ref_node[k].dec,h_ref_node[k].pix);
-		}
-		printf("\n\n");
 	}
 }
+
 
 int main(int argc, char *argv[])
 {
@@ -324,6 +325,40 @@ int main(int argc, char *argv[])
 
 	time(&rawtime);
 	printf("after sort : %s\n",ctime(&rawtime));
+
+
+	/*
+	int size = 600;
+	int cnt[600];
+	memset(cnt,0,sizeof(cnt));
+	int cnt_j = 0;
+	for(int i = 0; i < ref_N; ++i)
+	{
+		if(ref_node[i].pix > 0)
+		{
+			cout << "cur i " << i << endl;
+			break;
+		}
+		for(int j = 0; j < sam_N; ++j)
+		{
+			if(sam_node[j].pix > 0)
+			{
+				cnt_j = j;
+				break;
+			}
+			if(matched(sam_node[j].ra,sam_node[j].dec,ref_node[i].ra,ref_node[i].dec,0.0056))
+			{
+			//	printf("sam %d ra %.6lf dec %.6lf ref %d ra %.6lf dec %.6lf\n",j,sam_node[j].ra,sam_node[j].dec,i,ref_node[i].ra,ref_node[i].dec);
+				cnt[i]++;
+			}
+		}
+	}
+	cout << "cnt_j " << cnt_j << endl;
+	for(int i = 0; i < 515; ++i)
+		cout << i << " " << cnt[i] << endl;
+	return 0;
+*/
+
 
 	singleCM(ref_node,ref_N,sam_node,sam_N,sam_match,sam_matchedCnt);
 	time(&rawtime);
