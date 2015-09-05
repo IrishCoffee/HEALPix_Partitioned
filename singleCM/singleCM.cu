@@ -19,7 +19,7 @@ int ref_line[20];
 char ref_file[20][16];
 int sam_line[20];
 char sam_file[20][16];
-const int GPU_N = 2;
+const int GPU_N = 4;
 const int GBSize = 1024 * 1024 * 1024;
 const int block_size = 512;
 const int TILE_SIZE = 1024;
@@ -28,7 +28,10 @@ struct NODE
 	double ra,dec;
 	int pix;
 };
-
+double diffTime(timeval start,timeval end)
+{
+	return (end.tv_sec - start.tv_sec) * 1000 + (end.tv_usec - start.tv_usec) * 0.001;
+}
 bool cmp(NODE a,NODE b)
 {
 	return a.pix < b.pix;
@@ -73,7 +76,7 @@ __host__ __device__ double radians(double degree)
 {
 	return degree * pi / 180.0;
 }
-__host__	__device__
+	__host__	__device__
 bool matched(double ra1,double dec1,double ra2,double dec2,double radius)
 {
 	double z1 = sin(radians(dec1));
@@ -91,7 +94,7 @@ bool matched(double ra1,double dec1,double ra2,double dec2,double radius)
 		return true;
 	return false;
 }
-__global__
+	__global__
 void kernel_singleCM(NODE *ref_node, int ref_N, NODE *sam_node, int sam_N, int *sam_match,int *sam_matchedCnt,int ref_offset,int sam_offset)
 {
 	__shared__ int s_ref_pix[TILE_SIZE];
@@ -128,6 +131,8 @@ void kernel_singleCM(NODE *ref_node, int ref_N, NODE *sam_node, int sam_N, int *
 		block_ref_N = end_ref_pos - start_ref_pos + 1;
 		iteration = ceil(block_ref_N * 1.0 / TILE_SIZE);
 	}
+	if(threadIdx.x == 0 && blockIdx.x == gridDim.x - 1)
+		printf("block_sam_N %d start_ref_pos %d end_ref_pos %d iteration %d\n",block_sam_N,start_ref_pos,end_ref_pos,iteration);
 
 	__syncthreads();
 	if(start_ref_pos == -1)
@@ -141,10 +146,10 @@ void kernel_singleCM(NODE *ref_node, int ref_N, NODE *sam_node, int sam_N, int *
 		sam_dec = sam_node[tid].dec;
 		cnt = 0;
 	}
-
 	__syncthreads();
 	for(int ite = 0; ite < iteration; ++ite)
 	{
+		__syncthreads();
 		for(int k = 0; k < TILE_SIZE / blockDim.x; ++k)
 		{
 			int ref_pos = start_ref_pos + ite * TILE_SIZE + blockDim.x * k + threadIdx.x;
@@ -158,12 +163,9 @@ void kernel_singleCM(NODE *ref_node, int ref_N, NODE *sam_node, int sam_N, int *
 			else
 				s_ref_pix[s_ref_pos] = -1;
 		}
-
 		__syncthreads();
-
 		if(tid >= sam_N)
 			continue;
-
 		for(int j = 0; j < TILE_SIZE; ++j)
 		{
 			if(s_ref_pix[j] == -1 || s_ref_pix[j] > pix)
@@ -174,26 +176,26 @@ void kernel_singleCM(NODE *ref_node, int ref_N, NODE *sam_node, int sam_N, int *
 			{
 				cnt++;
 				if(cnt <= 5)
-					sam_match[tid * 5 + cnt] = ref_offset + start_ref_pos + ite * TILE_SIZE + j;
+					sam_match[tid * 5 + cnt - 1] = ref_offset + start_ref_pos + ite * TILE_SIZE + j;
 			}
 		}
-		__syncthreads();
 	}
 
-	sam_matchedCnt[tid] = cnt;
+	if(tid < sam_N)
+		sam_matchedCnt[tid] = cnt;
 }
 
 
 void singleCM(NODE h_ref_node[], int ref_N, NODE h_sam_node[], int sam_N, int h_sam_match[],int h_sam_matchedCnt[])
 {
 	//the maximum number of sample points that can be matched each time by each card
-	int part_sam_N = 25000000;
+//	int part_sam_N = 25000000;
+	int part_sam_N = 20000000;
 	int part_ref_N = 8 * part_sam_N;
 
 	NODE *d_ref_node[GPU_N];
 	NODE *d_sam_node[GPU_N];
 	int *d_sam_match[GPU_N], *d_sam_matchedCnt[GPU_N];
-
 	omp_set_num_threads(GPU_N);
 #pragma omp parallel
 	{
@@ -266,14 +268,50 @@ void singleCM(NODE h_ref_node[], int ref_N, NODE h_sam_node[], int sam_N, int h_
 			checkCudaErrors(cudaMemcpy(h_sam_match + start_sam_pos * 5,d_sam_match[i],cur_sam_N * 5 * sizeof(int),cudaMemcpyDeviceToHost));
 		}
 	}
+	unsigned long long sum = 0;
+	int cnt[1000];
+	memset(cnt,0,sizeof(cnt));
+	for(int i = sam_N - 1; i >= 0; --i)
+	{
+		sum += h_sam_matchedCnt[i];
+		cnt[h_sam_matchedCnt[i]]++;
+		if(i >= 100)
+			continue;
+		/*
+		cout << i << " " << h_sam_matchedCnt[i] << endl;
+		cout << h_sam_node[i].ra << " " << h_sam_node[i].dec << endl;
+		cout << "\n----------------\n" << endl;
+		for(int j = i * 5; j < i * 5 + min(5,h_sam_matchedCnt[i]); ++j)
+		{
+			int pos = h_sam_match[j];
+			cout << h_ref_node[pos].ra << " " << h_ref_node[pos].dec << endl;
+		}
+		cout << "\n--------------------\n" << endl;
+		*/
+	}
+	cout << "sum " << sum << endl;
+	cout << "ave " << sum * 1.0 / sam_N << endl;
+	unsigned long long sum1 = 0;
+	int N = 0;
+	for(int i = 0; i < 1000; ++i)
+		if(cnt[i])
+		{
+			N += cnt[i];
+			sum1 += cnt[i] * i;
+		//	printf("%d %d\n",i,cnt[i]);
+		}
+
+	cout << " N " << N << " sum1 " << sum1 << " ave " << sum1 * 1.0 / N << endl;
 }
 
 
 int main(int argc, char *argv[])
 {
+	struct timeval start,end;
 
-	const int ref_N = 1538557732;
-	const int sam_N = 200003876;
+	const int ref_N = 1538557680;
+	const int sam_N = 200006373;
+//	const int ref_N = 200006373;
 	time_t rawtime;
 
 	FILE *fd = fopen(argv[1],"r");
@@ -292,6 +330,7 @@ int main(int argc, char *argv[])
 
 	ref_node = (NODE *)malloc(sizeof(NODE) * ref_N);
 	sam_node = (NODE *)malloc(sizeof(NODE) * sam_N);
+
 
 	sam_matchedCnt = (int *)malloc(sizeof(int) * sam_N);
 	sam_match = (int *)malloc(sizeof(int) * sam_N * 5);
@@ -321,46 +360,19 @@ int main(int argc, char *argv[])
 	time(&rawtime);
 	printf("after read sam file : %s\n",ctime(&rawtime));
 
+	gettimeofday(&start,NULL);
 	tbb::parallel_sort(ref_node,ref_node + ref_N,cmp);
+	gettimeofday(&end,NULL);
+	printf("sort time %.3f \n",diffTime(start,end) * 0.001);
 
 	time(&rawtime);
 	printf("after sort : %s\n",ctime(&rawtime));
 
-
-	/*
-	int size = 600;
-	int cnt[600];
-	memset(cnt,0,sizeof(cnt));
-	int cnt_j = 0;
-	for(int i = 0; i < ref_N; ++i)
-	{
-		if(ref_node[i].pix > 0)
-		{
-			cout << "cur i " << i << endl;
-			break;
-		}
-		for(int j = 0; j < sam_N; ++j)
-		{
-			if(sam_node[j].pix > 0)
-			{
-				cnt_j = j;
-				break;
-			}
-			if(matched(sam_node[j].ra,sam_node[j].dec,ref_node[i].ra,ref_node[i].dec,0.0056))
-			{
-			//	printf("sam %d ra %.6lf dec %.6lf ref %d ra %.6lf dec %.6lf\n",j,sam_node[j].ra,sam_node[j].dec,i,ref_node[i].ra,ref_node[i].dec);
-				cnt[i]++;
-			}
-		}
-	}
-	cout << "cnt_j " << cnt_j << endl;
-	for(int i = 0; i < 515; ++i)
-		cout << i << " " << cnt[i] << endl;
-	return 0;
-*/
-
-
+	gettimeofday(&start,NULL);
 	singleCM(ref_node,ref_N,sam_node,sam_N,sam_match,sam_matchedCnt);
+	gettimeofday(&end,NULL);
+	printf("single CM %.3f s\n",diffTime(start,end) * 0.001);
+	printf("single CM %.3f min\n",diffTime(start,end) * 0.001 / 60);
 	time(&rawtime);
 	printf("singleCM : %s\n",ctime(&rawtime));
 }
