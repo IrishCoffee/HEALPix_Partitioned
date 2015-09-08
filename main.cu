@@ -23,50 +23,80 @@ using namespace std;
 int main(int argc, char* argv[])
 {
 	struct timeval start,end;
+	//MPI Communication Initalization
 	MPI_Init(&argc,&argv);
 	MPI_Comm_size(MPI_COMM_WORLD,&numprocs);
 	MPI_Comm_rank(MPI_COMM_WORLD,&rank);
 	MPI_Get_processor_name(processor_name,&namelen);
 
+	//Register new data type
+	MPI_Datatype old_types[3];
+	MPI_Aint indices[3];
+	int blocklens[3];
+	blocklens[0] = 1;
+	blocklens[1] = 1;
+	blocklens[2] = 1;
+	old_types[0] = MPI_DOUBLE;
+	old_types[1] = MPI_DOUBLE;
+	old_types[2] = MPI_INT;
+
+	indices[0] = 0;
+	indices[1] = sizeof(double);
+	indices[2] = 2 * sizeof(double);
+
+	MPI_Type_struct(3,blocklens,indices,old_types,&mpi_node);
+	MPI_Type_commit(&mpi_node);
+
+
+	//MPI worker group creation
+	MPI_Comm_group(MPI_COMM_WORLD, &entire_group);
+	int mem[1] = {0};
+	MPI_Group_excl(entire_group,1,mem,&worker_group);
+	MPI_Comm_create(MPI_COMM_WORLD,worker_group,&worker_comm);
+
 	printf("--------------\nRank %d Processor_name %s\n------------------\n",rank,processor_name);
 
 	if(rank == MASTER_NODE)
 	{
-
+		time_t rawtime;
+		time(&rawtime);
+		printf("%s starts at %s\n",processor_name,ctime(&rawtime));
 		master_allocation();
 		gettimeofday(&start,NULL);
-		cout << "master before loadfile " << endl;
+		cout << "/////////////// master before loadfile " << endl;
 		master_load_file(argv[2]);
 		gettimeofday(&end,NULL);
-		printf("master_load_file %.3f s \n", diffTime(start,end) * 0.001 );
+		printf("//////////////// master_load_file %.3f s \n", diffTime(start,end) * 0.001 );
 
 		gettimeofday(&start,NULL);
 		master_getPix();
 		gettimeofday(&end,NULL);
-		printf("master_getPix %.3f s \n", diffTime(start,end) * 0.001 );
+		printf("/////////////// master_getPix %.3f s \n", diffTime(start,end) * 0.001 );
 
 		gettimeofday(&start,NULL);
 		tbb::parallel_sort(h_sam_node,h_sam_node + sam_N,cmp);
 		gettimeofday(&end,NULL);
-		printf("master sort %.3f s \n", diffTime(start,end) * 0.001 );
+		printf("///////////// master sort %.3f s \n", diffTime(start,end) * 0.001 );
 
-		int *cnt_table = (int *)malloc(sizeof(int) * cntSize);
-		memset(cnt_table,0,sizeof(cnt_table));
-		for(int i = 0; i < sam_N; ++i)
-			cnt_table[h_sam_node[i].pix]++;
+		
+//		master_free();
+		time(&rawtime);
+		printf("%s ends at %s\n",processor_name,ctime(&rawtime));
 
-		int zero_cnt = 0;
-		for(int i = 0; i < cntSize; ++i)
-			if(cnt_table[i] == 0)
-				zero_cnt++;
-		cout << " master zero_cnt " << zero_cnt << endl;
+		MPI_Barrier(MPI_COMM_WORLD);
+		gettimeofday(&start,NULL);
+		master_send_sample(2);
+		gettimeofday(&end,NULL);
+		printf("//////////// master_send_sample %.3f s\n",diffTime(start,end) * 0.001);
 
-		free(cnt_table);
 		master_free();
 		MPI_Finalize();
 	}
 	else
 	{
+		time_t rawtime;
+		time(&rawtime);
+		printf("%s starts : %s\n",processor_name,ctime(&rawtime));
 		printf("Number of host CPUs:\t%d\n",omp_get_num_procs());
 		//	checkCudaErrors(cudaGetDeviceCount(&GPU_N));
 		printf("\n=============================\nCUDA-capable device count: %d\n",GPU_N);
@@ -114,35 +144,28 @@ int main(int argc, char* argv[])
 		gettimeofday(&end,NULL);
 		printf("%s worker_countR %.3f s \n",processor_name, diffTime(start,end) * 0.001 );
 
-		int zeroCnt = 0;
-		int sum = 0;
-		for(int i = 0; i < cntSize; ++i)
+		time(&rawtime);
+		printf("%s ends : %s\n",processor_name,ctime(&rawtime));
+
+		if(rank == 1)
 		{
-			sum += h_R_cnt[i];
-			if(h_R_cnt[i] == 0)
-				zeroCnt++;
+			start_pix = 0;
+			end_pix = 307592346;
 		}
-		printf("sum %d zeroCnt %d percent %.3lf \n",sum,zeroCnt,zeroCnt * 100.0 / cntSize);
+		else if(rank == 2)
+		{
+			start_pix = 307592347;
+			end_pix = 379936658;
+		}
 
-		/*
-		for(int i = 0; i < 20; ++i)
-			printf("%d %.3lf %.3lf %d\n",i,h_ref_dup_node[i].ra,h_ref_dup_node[i].dec,h_ref_dup_node[i].pix);
-
-		for(int i = 0; i < 20; ++i)
-			printf("pix %d cnt %d startPos %d\n",i,h_R_cnt[i],h_R_startPos[i]);
-*/
+		MPI_Barrier(MPI_COMM_WORLD);
 		gettimeofday(&start,NULL);
-		worker_merge_step1(rank);
+		worker_requestSample(rank);
 		gettimeofday(&end,NULL);
-		printf("%s worker_merge %.3f s \n", processor_name,diffTime(start,end) * 0.001 );
-
-		freopen(processor_name,"w",stdout);
-		for(int i = 0; i < cntSize; ++i)
-			printf("%d\n",h_R_cnt[i]);
-		fclose(stdout);
+		printf("%s worker_request sample %.3f s \n", processor_name,diffTime(start,end) * 0.001 );
 
 		worker_memory_free();
 		MPI_Finalize();
+		return 0;
 	}
-	return 0;
 }
