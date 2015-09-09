@@ -15,7 +15,6 @@ void worker_memory_allocation()
 void worker_memory_free()
 {
 	free(h_ref_dup_node);
-	free(h_worker_ref);
 	free(h_worker_sam);
 }
 
@@ -142,75 +141,75 @@ void worker_countR()
 void worker_merge(int rank)
 {
 	/*
-	MPI_Status status;
-	if(rank == 2 || rank == 3)
-		MPI_Send(h_R_cnt,cntSize,MPI_INT,1,3,MPI_COMM_WORLD);
-	else if(rank == 5 || rank == 6)
-		MPI_Send(h_R_cnt,cntSize,MPI_INT,3,3,MPI_COMM_WORLD);
-	else if(rank == 1)
-	{
-		int *cnt_buffer1 = (int*)malloc(sizeof(int) * cntSize);
-		int *cnt_buffer2 = (int*)malloc(sizeof(int) * cntSize);
-		int *cnt_merge = (int*)malloc(sizeof(int) * cntSize);
-		MPI_Recv(cnt_buffer1,cntSize,MPI_INT,2,3,MPI_COMM_WORLD,&status);
-		MPI_Recv(cnt_buffer2,cntSize,MPI_INT,3,3,MPI_COMM_WORLD,&status);
-		for(int i = 0; i < cntSize; ++i)
-			cnt_merge[i] = h_R_cnt[i] + cnt_buffer1[i] + cnt_buffer2[i];
-		free(cnt_buffer1);
-		free(cnt_buffer2);
-		MPI_Send(cnt_merge,cntSize,MPI_INT,4,3,MPI_COMM_WORLD);
-		free(cnt_merge);
-	}
-	else // rank 4
-	{
-		int *cnt_buffer1 = (int*)malloc(sizeof(int) * cntSize);
-		int *cnt_buffer2 = (int*)malloc(sizeof(int) * cntSize);
-		int *cnt_merge = (int*)malloc(sizeof(int) * cntSize);
-		MPI_Recv(cnt_buffer1,cntSize,MPI_INT,5,3,MPI_COMM_WORLD,&status);
-		MPI_Recv(cnt_buffer2,cntSize,MPI_INT,6,3,MPI_COMM_WORLD,&status);
-		for(int i = 0; i < cntSize; ++i)
-			cnt_merge[i] = h_R_cnt[i] + cnt_buffer1[i] + cnt_buffer2[i];
-		free(cnt_buffer2);
-		MPI_Recv(cnt_buffer1,cntSize,MPI_INT,1,3,MPI_COMM_WORLD,&status);
-		long long sum = 0;
-		for(int i = 0; i < cntSize; ++i)
-		{
-			cnt_merge[i] += cnt_buffer1[i];
-			sum += cnt_merge[i];
-		}
-		free(cnt_buffer1);
-		long long ave = sum / worker_N; // we have six nodes in total
-		long long cur = 0;
-		int start_pix = 0,end_pix = 0;;
-		int rank_cnt = 0;
-		for(int i = 0; i < cntSize; ++i)
-		{
-			if(cur + cnt_merge[i] > ave)
-			{
-				end_pix = i - 1;
-				chunk_start_pix[rank_cnt] = start_pix;
-				chunk_end_pix[rank_cnt] = end_pix;
+	   MPI_Status status;
+	   if(rank == 2 || rank == 3)
+	   MPI_Send(h_R_cnt,cntSize,MPI_INT,1,3,MPI_COMM_WORLD);
+	   else if(rank == 5 || rank == 6)
+	   MPI_Send(h_R_cnt,cntSize,MPI_INT,3,3,MPI_COMM_WORLD);
+	   else if(rank == 1)
+	   {
+	   int *cnt_buffer1 = (int*)malloc(sizeof(int) * cntSize);
+	   int *cnt_buffer2 = (int*)malloc(sizeof(int) * cntSize);
+	   int *cnt_merge = (int*)malloc(sizeof(int) * cntSize);
+	   MPI_Recv(cnt_buffer1,cntSize,MPI_INT,2,3,MPI_COMM_WORLD,&status);
+	   MPI_Recv(cnt_buffer2,cntSize,MPI_INT,3,3,MPI_COMM_WORLD,&status);
+	   for(int i = 0; i < cntSize; ++i)
+	   cnt_merge[i] = h_R_cnt[i] + cnt_buffer1[i] + cnt_buffer2[i];
+	   free(cnt_buffer1);
+	   free(cnt_buffer2);
+	   MPI_Send(cnt_merge,cntSize,MPI_INT,4,3,MPI_COMM_WORLD);
+	   free(cnt_merge);
+	   }
+	   else // rank 4
+	   {
+	   int *cnt_buffer1 = (int*)malloc(sizeof(int) * cntSize);
+	   int *cnt_buffer2 = (int*)malloc(sizeof(int) * cntSize);
+	   int *cnt_merge = (int*)malloc(sizeof(int) * cntSize);
+	   MPI_Recv(cnt_buffer1,cntSize,MPI_INT,5,3,MPI_COMM_WORLD,&status);
+	   MPI_Recv(cnt_buffer2,cntSize,MPI_INT,6,3,MPI_COMM_WORLD,&status);
+	   for(int i = 0; i < cntSize; ++i)
+	   cnt_merge[i] = h_R_cnt[i] + cnt_buffer1[i] + cnt_buffer2[i];
+	   free(cnt_buffer2);
+	   MPI_Recv(cnt_buffer1,cntSize,MPI_INT,1,3,MPI_COMM_WORLD,&status);
+	   long long sum = 0;
+	   for(int i = 0; i < cntSize; ++i)
+	   {
+	   cnt_merge[i] += cnt_buffer1[i];
+	   sum += cnt_merge[i];
+	   }
+	   free(cnt_buffer1);
+	   long long ave = sum / worker_N; // we have six nodes in total
+	   long long cur = 0;
+	   int start_pix = 0,end_pix = 0;;
+	   int rank_cnt = 0;
+	   for(int i = 0; i < cntSize; ++i)
+	   {
+	   if(cur + cnt_merge[i] > ave)
+	   {
+	   end_pix = i - 1;
+	   chunk_start_pix[rank_cnt] = start_pix;
+	   chunk_end_pix[rank_cnt] = end_pix;
 
-				rank_cnt++;
-				
-				cur = cnt_merge[i];
-				start_pix = i;
-				
-				if(rank_cnt == 5)
-					break;
-			}
-			else
-				cur += cnt_merge[i];
-		}
-		chunk_start_pix[rank_cnt] = start_pix;
-		chunk_end_pix[rank_cnt] = cntSize - 1;
-	}
-	free(h_R_cnt);
+	   rank_cnt++;
+
+	   cur = cnt_merge[i];
+	   start_pix = i;
+
+	   if(rank_cnt == 5)
+	   break;
+	   }
+	   else
+	   cur += cnt_merge[i];
+	   }
+	   chunk_start_pix[rank_cnt] = start_pix;
+	   chunk_end_pix[rank_cnt] = cntSize - 1;
+	   }
+	   free(h_R_cnt);
 	//rank 4 broadcast partition table 
 	MPI_Barrier(worker_comm);
 	MPI_Bcast(chunk_start_pix,6,MPI_INT,4,worker_comm);
 	MPI_Bcast(chunk_end_pix,6,MPI_INT,4,worker_comm);
-*/
+	*/
 	chunk_start_pix[0] = 0;
 	chunk_start_pix[1] = 307592347;
 	chunk_start_pix[2] = 379936659;
@@ -224,35 +223,6 @@ void worker_merge(int rank)
 	chunk_end_pix[3] = 631888854;
 	chunk_end_pix[4] = 703462319;
 	chunk_end_pix[5] = 805306367;
-/*
-	omp_set_num_threads(worker_N);
-#pragma omp parallel
-	{
-		int i = omp_get_thread_num() % worker_N;
-		int cnt_tmp = 0;
-		bool found_start = false;
-		int start_pix = chunk_start_pix[i];
-		int end_pix = chunk_end_pix[i];
-		for(int j = 0; j < ref_dup_N; ++j)
-		{
-			if(h_ref_dup_node[j].pix >= start_pix && h_ref_dup_node[j].pix <= end_pix)
-			{
-				cnt_tmp++;
-				if(!found_start)
-				{
-					found_start = true;
-					pix_chunk_startPos[i] = j;
-				}
-			}
-			if(h_ref_dup_node[j].pix > end_pix || j == ref_dup_N - 1)
-			{
-				pix_chunk_cnt[i] = cnt_tmp;
-				break;
-			}
-			
-		}
-	}
-*/
 	int start_pos[6];
 	int end_pos[6];
 	omp_set_num_threads(worker_N * 2);
@@ -345,7 +315,7 @@ void singleCM(PIX_NODE h_ref_node[], int ref_N, PIX_NODE h_sam_node[], int sam_N
 		printf("Card %d after malloc %.2lf GB, total memory %.2lf GB\n",i,free_mem * 1.0 / GBSize,total_mem * 1.0 / GBSize);
 
 		while(chunk_id < chunk_N)
-		//the total number of sample points processed by this card
+			//the total number of sample points processed by this card
 		{
 #pragma omp atomic
 			chunk_id++;
@@ -416,7 +386,7 @@ void singleCM(PIX_NODE h_ref_node[], int ref_N, PIX_NODE h_sam_node[], int sam_N
 		   cout << h_ref_node[pos].ra << " " << h_ref_node[pos].dec << endl;
 		   }
 		   cout << "\n--------------------\n" << endl;
-		 */
+		   */
 	}
 	cout << "sum " << sum << endl;
 	cout << "ave " << sum * 1.0 / sam_N << endl;
@@ -429,5 +399,85 @@ void worker_ownCM(int rank)
 	singleCM(h_worker_sam,worker_sam_N,h_ref_dup_node + pix_chunk_startPos[rank-1],worker_ref_N,ref_match,ref_matchedCnt);
 	free(ref_match);
 	free(ref_matchedCnt);
+}
+
+void worker_CM(int rank)
+{
+	struct timeval start,end;
+//	PIX_NODE *buffer;
+//	buffer = (PIX_NODE*)malloc(sizeof(PIX_NODE) * MPI_MESSLEN);
+	MPI_Status status;
+//	for(int i = 0; i < worker_N - 1; ++i)
+	MPI_Barrier(worker_comm);
+	for(int i = 0; i < 1; ++i)
+	{
+		MPI_Barrier(worker_comm);
+		int commID = request_node[rank-1][i]; // the rank which communiates to in this iteration
+		int send_amount = pix_chunk_cnt[commID - 1];
+		int startPos = pix_chunk_startPos[commID - 1];
+		
+		MPI_Sendrecv(&send_amount,1,MPI_INT,commID-1,3,&worker_ref_N,1,MPI_INT,commID-1,3,worker_comm,&status);
+		printf("rank-%d iteration-%d commID-%d will send %d recv %d\n",rank,i,commID,send_amount,worker_ref_N);
+		printf("rank-%d send startPos %d\n",rank,startPos);
+		h_worker_ref = (PIX_NODE *)malloc(sizeof(PIX_NODE) * worker_ref_N);
+//		MPI_Sendrecv(h_ref_dup_node + pix_chunk_startPos[commID -1],send_amount,mpi_node,commID - 1,3,h_worker_ref,worker_ref_N,mpi_node,commID - 1,3,worker_comm,&status);
+
+		int min_amount = min(send_amount,worker_ref_N);
+		int sendRecv_iteration = ceil(1.0 * min_amount / MPI_MESSLEN);
+		int remain_amount = send_amount > worker_ref_N ? (send_amount - min_amount) : (worker_ref_N - min_amount);
+		int remain_iteration = ceil(1.0 * remain_amount / MPI_MESSLEN);
+
+		gettimeofday(&start,NULL);
+		for(int j = 0; j < sendRecv_iteration; ++j)
+		{
+			int cur_N;
+			if(j != sendRecv_iteration - 1)
+				cur_N = MPI_MESSLEN;
+			else
+				cur_N = min_amount - j * MPI_MESSLEN;
+			MPI_Sendrecv(h_ref_dup_node + startPos + j * MPI_MESSLEN,cur_N,mpi_node,commID-1,3,h_worker_ref + j * MPI_MESSLEN,cur_N,mpi_node,commID-1,3,worker_comm,&status);
+//			MPI_Sendrecv(h_ref_dup_node + startPos + j * MPI_MESSLEN,cur_N,mpi_node,commID-1,3,buffer,cur_N,mpi_node,commID-1,3,worker_comm,&status);
+//			memcpy(h_worker_ref + j * MPI_MESSLEN,buffer,cur_N * sizeof(PIX_NODE));
+			printf("rank-%d SendRecv iteration-%d amount %d\n",rank,j,cur_N);
+		}
+		gettimeofday(&end,NULL);
+		printf("rank-%d sendRecv %.3f s\n",rank,diffTime(start,end) * 0.001);
+
+
+		gettimeofday(&start,NULL);
+		for(int j = 0; remain_amount != 0 && j < remain_iteration; ++j)
+		{
+			int cur_N;
+			if(j != remain_iteration - 1)
+				cur_N = MPI_MESSLEN;
+			else
+				cur_N = remain_amount - j * MPI_MESSLEN;
+			if(send_amount > worker_ref_N)
+			{
+				MPI_Send(h_ref_dup_node + startPos +  min_amount + j * MPI_MESSLEN,cur_N,mpi_node,commID - 1,3,worker_comm);
+				printf("rank-%d send iteration-%d amount %d\n",rank,j,cur_N);
+			}
+			else
+			{
+				MPI_Recv(h_worker_ref + min_amount + j * MPI_MESSLEN,cur_N,mpi_node,commID - 1,3,worker_comm,&status);
+		//		MPI_Recv(buffer,cur_N,mpi_node,commID - 1,3,worker_comm,&status);
+		//		memcpy(h_worker_ref + min_amount + j * MPI_MESSLEN,buffer,cur_N * sizeof(PIX_NODE));
+				printf("rank-%d recv iteration-%d amount %d\n",rank,j,cur_N);
+			}
+		}
+		gettimeofday(&end,NULL);
+		printf("rank-%d send or recv %.3f s\n",rank,diffTime(start,end) * 0.001);
+	
+		gettimeofday(&start,NULL);
+		int *ref_match = (int*)malloc(sizeof(int) * worker_ref_N * 5);
+		int *ref_matchedCnt = (int*)malloc(sizeof(int) * worker_ref_N);
+		singleCM(h_worker_sam,worker_sam_N,h_worker_ref,worker_ref_N,ref_match,ref_matchedCnt);
+		gettimeofday(&end,NULL);
+		printf("rank-%d single CM %.3f s\n",rank,diffTime(start,end) * 0.001);
+		free(ref_match);
+		free(ref_matchedCnt);
+		free(h_worker_ref);
+	}
+
 }
 #endif

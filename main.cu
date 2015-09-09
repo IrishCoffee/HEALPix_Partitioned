@@ -88,9 +88,13 @@ int main(int argc, char* argv[])
 		master_send_sample(2);
 		gettimeofday(&end,NULL);
 		printf("//////////// master_send_sample %.3f s\n",diffTime(start,end) * 0.001);
+		
+		time(&rawtime);
+		printf("%s ends at %s\n",processor_name,ctime(&rawtime));
 
 		master_free();
 		MPI_Finalize();
+		return 0;
 	}
 	else
 	{
@@ -167,6 +171,14 @@ int main(int argc, char* argv[])
 		gettimeofday(&end,NULL);
 		printf("%s worker_ownCM %.3f s \n", processor_name,diffTime(start,end) * 0.001 );
 
+		gettimeofday(&start,NULL);
+		worker_CM(rank);
+		gettimeofday(&end,NULL);
+		printf("%s worker_ownCM %.3f s \n", processor_name,diffTime(start,end) * 0.001 );
+
+		time(&rawtime);
+		printf("%s ends : %s\n",processor_name,ctime(&rawtime));
+		
 		worker_memory_free();
 		MPI_Finalize();
 		return 0;
