@@ -111,9 +111,9 @@ INCLUDES      := -I$(CUDA_INC_PATH) -I. -I.. -I$(CUDA_PATH)/samples/common/inc
 
 noinst_LIBRARIES = libcuda.a 
 
-noinst_OBJECTS = kernel_functions.o healpix_base.o geometry_cal.o vec3.o
+noinst_OBJECTS = kernel_functions.o healpix_base.o geometry_cal.o vec3.o singleCM_kernel.o
 
-libcuda_a_SOURCES = kernel_functions.cu healpix_base.cu geometry_cal.cu vec3.cu 
+libcuda_a_SOURCES = kernel_functions.cu healpix_base.cu geometry_cal.cu vec3.cu singleCM_kernel.cu
 
 # Target rules
 all: build
@@ -134,6 +134,9 @@ geometry_cal.o: geometry_cal.cu
 
 vec3.o: vec3.cu
 	$(NVCC) -dc -O3 vec3.cu $(GENCODE_SM35)
+
+singleCM_kernel.o: singleCM_kernel.cu
+	$(NVCC) -dc -O3 singleCM_kernel.cu $(GENCODE_SM35)
 
 clean:
 	rm -f $(noinst_LIBRARIES) *.o 

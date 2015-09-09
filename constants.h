@@ -17,4 +17,13 @@ const int max_order = 13;
 const int MAX_MATCH = 1;
 const int MAX_RANGE_PAIR = 20; //10 pairs
 const double eps = 1e-8;
+
+const int block_size = 512;
+const int TILE_SIZE = 1024;
+struct PIX_NODE
+{
+	double ra; 
+	double dec;
+	int pix;
+};
 #endif

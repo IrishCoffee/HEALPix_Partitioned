@@ -25,12 +25,6 @@ int *h_ref_pix;
 int *h_ref_dup_pix,*h_ref_dup_pix1;
 double *h_ref_dup_ra,*h_ref_dup_dec;
 
-struct PIX_NODE
-{
-	double ra;
-	double dec;
-	int pix;
-};
 PIX_NODE *h_ref_dup_node;
 
 PIX_NODE *h_worker_ref;
