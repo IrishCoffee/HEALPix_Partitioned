@@ -141,6 +141,7 @@ void worker_countR()
 
 void worker_merge(int rank)
 {
+	/*
 	MPI_Status status;
 	if(rank == 2 || rank == 3)
 		MPI_Send(h_R_cnt,cntSize,MPI_INT,1,3,MPI_COMM_WORLD);
@@ -209,7 +210,21 @@ void worker_merge(int rank)
 	MPI_Barrier(worker_comm);
 	MPI_Bcast(chunk_start_pix,6,MPI_INT,4,worker_comm);
 	MPI_Bcast(chunk_end_pix,6,MPI_INT,4,worker_comm);
+*/
+	chunk_start_pix[0] = 0;
+	chunk_start_pix[1] = 307592347;
+	chunk_start_pix[2] = 379936659;
+	chunk_start_pix[3] = 492136207;
+	chunk_start_pix[4] = 631888855;
+	chunk_start_pix[5] = 703462320;
 
+	chunk_end_pix[0] = 307592346;
+	chunk_end_pix[1] = 379936658;
+	chunk_end_pix[2] = 492136206;
+	chunk_end_pix[3] = 631888854;
+	chunk_end_pix[4] = 703462319;
+	chunk_end_pix[5] = 805306367;
+/*
 	omp_set_num_threads(worker_N);
 #pragma omp parallel
 	{
@@ -237,6 +252,38 @@ void worker_merge(int rank)
 			
 		}
 	}
+*/
+	int start_pos[6];
+	int end_pos[6];
+	omp_set_num_threads(worker_N * 2);
+#pragma omp parallel
+	{
+		int i = omp_get_thread_num() % (worker_N * 2);
+		int start_pix,end_pix;
+		if(i < 6)
+		{
+			start_pix = chunk_start_pix[i];
+			start_pos[i] = binary_search(start_pix - 1,h_ref_dup_node,ref_dup_N);
+		}
+		else
+		{
+			end_pix = chunk_end_pix[i % worker_N];
+			end_pos[i % worker_N] = binary_search(end_pix,h_ref_dup_node,ref_dup_N);
+			if(end_pos[i % worker_N] == -1)
+				end_pos[i % worker_N] = ref_dup_N;
+		}
+	}
+
+	omp_set_num_threads(worker_N);
+#pragma omp parallel
+	{
+		int i = omp_get_thread_num() % worker_N;
+		pix_chunk_startPos[i] = start_pos[i];
+		pix_chunk_cnt[i] = end_pos[i] - start_pos[i];
+	}
+
+	for(int i = 0; i < 6; ++i)
+		printf("rank-%d pixChunk-%d cnt %d startPos %d\n",rank,i,pix_chunk_cnt[i],pix_chunk_startPos[i]);
 	return;
 
 }
@@ -244,8 +291,8 @@ void worker_requestSample(int rank)
 {
 	printf("rank-%d prepare to send start/end pix to master\n",rank);
 	MPI_Status status;
-	MPI_Send(&start_pix,1,MPI_INT,MASTER_NODE,3,MPI_COMM_WORLD);
-	MPI_Send(&end_pix,1,MPI_INT,MASTER_NODE,3,MPI_COMM_WORLD);
+	MPI_Send(&chunk_start_pix[rank-1],1,MPI_INT,MASTER_NODE,3,MPI_COMM_WORLD);
+	MPI_Send(&chunk_end_pix[rank-1],1,MPI_INT,MASTER_NODE,3,MPI_COMM_WORLD);
 	printf("rank-%d send start and end to master\n",rank);
 	MPI_Recv(&worker_sam_N,1,MPI_INT,MASTER_NODE,3,MPI_COMM_WORLD,&status);
 	printf("rank-%d request sample amount %d\n",rank,worker_sam_N);
@@ -346,6 +393,12 @@ void singleCM(PIX_NODE h_ref_node[], int ref_N, PIX_NODE h_sam_node[], int sam_N
 			checkCudaErrors(cudaMemcpy(h_sam_matchedCnt + start_sam_pos,d_sam_matchedCnt[i],cur_sam_N * sizeof(int),cudaMemcpyDeviceToHost));
 			checkCudaErrors(cudaMemcpy(h_sam_match + start_sam_pos * 5,d_sam_match[i],cur_sam_N * 5 * sizeof(int),cudaMemcpyDeviceToHost));
 		}
+
+		checkCudaErrors(cudaFree(d_sam_matchedCnt[i]));
+		checkCudaErrors(cudaFree(d_sam_match[i]));
+		checkCudaErrors(cudaFree(d_ref_node[i]));
+		checkCudaErrors(cudaFree(d_sam_node[i]));
+
 	}
 	unsigned long long sum = 0;
 	int cnt[1000];
@@ -367,5 +420,14 @@ void singleCM(PIX_NODE h_ref_node[], int ref_N, PIX_NODE h_sam_node[], int sam_N
 	}
 	cout << "sum " << sum << endl;
 	cout << "ave " << sum * 1.0 / sam_N << endl;
+}
+void worker_ownCM(int rank)
+{
+	worker_ref_N = pix_chunk_cnt[rank-1];
+	int *ref_match = (int*)malloc(sizeof(int) * worker_ref_N * 5);
+	int *ref_matchedCnt = (int*)malloc(sizeof(int) * worker_ref_N);
+	singleCM(h_worker_sam,worker_sam_N,h_ref_dup_node + pix_chunk_startPos[rank-1],worker_ref_N,ref_match,ref_matchedCnt);
+	free(ref_match);
+	free(ref_matchedCnt);
 }
 #endif

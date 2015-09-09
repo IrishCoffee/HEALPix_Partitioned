@@ -147,22 +147,25 @@ int main(int argc, char* argv[])
 		time(&rawtime);
 		printf("%s ends : %s\n",processor_name,ctime(&rawtime));
 
-		if(rank == 1)
-		{
-			start_pix = 0;
-			end_pix = 307592346;
-		}
-		else if(rank == 2)
-		{
-			start_pix = 307592347;
-			end_pix = 379936658;
-		}
-
+		MPI_Barrier(worker_comm);
+		gettimeofday(&start,NULL);
+		worker_merge(rank);
+		gettimeofday(&end,NULL);
+		printf("%s worker_merge %.3f s\n",processor_name,diffTime(start,end) * 0.001);
+		
+		time(&rawtime);
+		printf("%s after merge : %s\n",processor_name,ctime(&rawtime));
+	
 		MPI_Barrier(MPI_COMM_WORLD);
 		gettimeofday(&start,NULL);
 		worker_requestSample(rank);
 		gettimeofday(&end,NULL);
 		printf("%s worker_request sample %.3f s \n", processor_name,diffTime(start,end) * 0.001 );
+
+		gettimeofday(&start,NULL);
+		worker_ownCM(rank);
+		gettimeofday(&end,NULL);
+		printf("%s worker_ownCM %.3f s \n", processor_name,diffTime(start,end) * 0.001 );
 
 		worker_memory_free();
 		MPI_Finalize();
