@@ -78,14 +78,19 @@ int main(int argc, char* argv[])
 		gettimeofday(&end,NULL);
 		printf("///////////// master sort %.3f s \n", diffTime(start,end) * 0.001 );
 
-		
+		gettimeofday(&start,NULL);
+		master_toArray();
+		gettimeofday(&end,NULL);
+		printf("/////////// master transferToArray %.3f s\n",diffTime(start,end) * 0.001);
+
+
 //		master_free();
 		time(&rawtime);
 		printf("%s ends at %s\n",processor_name,ctime(&rawtime));
 
 		MPI_Barrier(MPI_COMM_WORLD);
 		gettimeofday(&start,NULL);
-		master_send_sample(2);
+		master_send_sample(num_procs - 1);
 		gettimeofday(&end,NULL);
 		printf("//////////// master_send_sample %.3f s\n",diffTime(start,end) * 0.001);
 		
@@ -156,6 +161,8 @@ int main(int argc, char* argv[])
 		worker_merge(rank);
 		gettimeofday(&end,NULL);
 		printf("%s worker_merge %.3f s\n",processor_name,diffTime(start,end) * 0.001);
+
+		free(h_R_cnt);
 		
 		time(&rawtime);
 		printf("%s after merge : %s\n",processor_name,ctime(&rawtime));
@@ -166,13 +173,22 @@ int main(int argc, char* argv[])
 		gettimeofday(&end,NULL);
 		printf("%s worker_request sample %.3f s \n", processor_name,diffTime(start,end) * 0.001 );
 
+		h_ref_dup_ra = (double*)malloc(sizeof(double) * 400000000);
+		h_ref_dup_dec = (double*)malloc(sizeof(double) * 400000000);
+		h_ref_dup_pix = (int*)malloc(sizeof(int) * 400000000);
+
 		gettimeofday(&start,NULL);
 		worker_ownCM(rank);
 		gettimeofday(&end,NULL);
 		printf("%s worker_ownCM %.3f s \n", processor_name,diffTime(start,end) * 0.001 );
+		
+		worker_memory_free();
+		MPI_Finalize();
+		return 0;
 
 		gettimeofday(&start,NULL);
-		worker_CM(rank);
+//		worker_CM(rank);
+//		worker_CM_separateSendRecv(rank);
 		gettimeofday(&end,NULL);
 		printf("%s worker_ownCM %.3f s \n", processor_name,diffTime(start,end) * 0.001 );
 

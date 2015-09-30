@@ -11,7 +11,9 @@ void master_allocation()
 
 void master_free()
 {
-	free(h_sam_node);
+	free(h_sam_ra);
+	free(h_sam_dec);
+	free(h_sam_pix);
 }
 
 //load sample file, compute HEALPix id for all points
@@ -20,7 +22,7 @@ void master_load_file(char *masterFileList)
 	readSamFile(masterFileList,240);
 
 	int offset = 5000000;
-	int cores = 40;
+	int cores = 20;
 	int eachN = 240 / cores; //each thread is responsible for 6 files
 
 	omp_set_num_threads(cores);
@@ -48,6 +50,21 @@ void master_getPix()
 	}   
 }
 
+void master_toArray()
+{
+	h_sam_ra = (double *)malloc(sizeof(double) * sam_N);
+	h_sam_dec = (double *)malloc(sizeof(double) * sam_N);
+	h_sam_pix = (int *)malloc(sizeof(int) * sam_N);
+#pragma omp parallel for
+	for(int i = 0; i < sam_N; ++i)
+	{
+		h_sam_ra[i] = h_sam_node[i].ra;
+		h_sam_dec[i] = h_sam_node[i].dec;
+		h_sam_pix[i] = h_sam_node[i].pix;
+	}
+	free(h_sam_node);
+}
+
 void master_send_sample(int worker_N)
 {
 	MPI_Status status;
@@ -69,7 +86,7 @@ void master_send_sample(int worker_N)
 		bool found_start = false;
 		for(int j = 0; j < sam_N; ++j)
 		{
-			if(h_sam_node[j].pix >= start_pix[i] && h_sam_node[j].pix <= end_pix[i])
+			if(h_sam_pix[j] >= start_pix[i] && h_sam_pix[j] <= end_pix[i])
 			{
 				cnt_tmp++;
 				if(!found_start)
@@ -78,18 +95,20 @@ void master_send_sample(int worker_N)
 					start_pos[i] = j;
 				}
 			}
-			if(h_sam_node[j].pix > end_pix[i] || j == sam_N - 1)
+			if(h_sam_pix[j] > end_pix[i] || j == sam_N - 1)
 			{
 				cnt[i] = cnt_tmp;
 				break;
 			}
 		}
 	}
-	cout << 0 << " " << start_pos[0] << endl;
-	cout << 1 << " " << start_pos[1] << endl;
+	printf("Master finished calcualting the start/end position \n");
+	MPI_Request send_request[300];
+	MPI_Status send_status[300];
+	int send_cnt = 0;
 	for(int i = 0; i < worker_N; ++i)
 	{
-		MPI_Send(cnt + i,1,MPI_INT,i + 1, 3,MPI_COMM_WORLD);
+		MPI_Isend(cnt + i,1,MPI_INT,i + 1, 3,MPI_COMM_WORLD,&send_request[send_cnt++]);
 		int ite = (int)ceil(cnt[i] * 1.0 / MPI_MESSLEN);
 		for(int j = 0; j < ite; ++j)
 		{
@@ -98,15 +117,17 @@ void master_send_sample(int worker_N)
 				len = MPI_MESSLEN;
 			else 
 				len = cnt[i] - j * MPI_MESSLEN;
-			printf("\\\\\\\\ master send to %d iteration %d\n",rank,j);
-			MPI_Send(h_sam_node + start_pos[i] + MPI_MESSLEN * j,len,mpi_node,i+1,3,MPI_COMM_WORLD);
+//			MPI_Send(h_sam_node + start_pos[i] + MPI_MESSLEN * j,len,mpi_node,i+1,3,MPI_COMM_WORLD);
+//			MPI_Isend(h_sam_node + start_pos[i] + MPI_MESSLEN * j,len,mpi_node,i+1,3,MPI_COMM_WORLD,&send_request[send_cnt++]);
+			MPI_Isend(h_sam_ra + start_pos[i] + MPI_MESSLEN * j,len,MPI_DOUBLE,i+1,3,MPI_COMM_WORLD,&send_request[send_cnt++]);
+			MPI_Isend(h_sam_dec + start_pos[i] + MPI_MESSLEN * j,len,MPI_DOUBLE,i+1,3,MPI_COMM_WORLD,&send_request[send_cnt++]);
+			MPI_Isend(h_sam_pix + start_pos[i] + MPI_MESSLEN * j,len,MPI_INT,i+1,3,MPI_COMM_WORLD,&send_request[send_cnt++]);
+			printf("\\\\\\\\ master send to %d iteration %d\n",i + 1,j);
 		}
 	}
-	for(int i = 0; i < 10; ++i)
-		printf("master i %d pix %d ra %.6lf dec %.6lf\n",i,h_sam_node[i].pix,h_sam_node[i].ra,h_sam_node[i].dec);
-	printf("\\\\\\\\\\\\ \n");
-	for(int i = start_pos[1]; i < start_pos[1] + 10; ++i)
-		printf("master i %d pix %d ra %.6lf dec %.6lf\n",i,h_sam_node[i].pix,h_sam_node[i].ra,h_sam_node[i].dec);
+	printf("\\\\\\\\\\\\master send request_cnt %d\n",send_cnt);
+	MPI_Waitall(send_cnt,send_request,send_status);
+	printf("\\\\\\\ master send request completed\n");
 }
 
 #endif

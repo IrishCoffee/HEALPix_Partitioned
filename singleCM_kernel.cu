@@ -1,6 +1,23 @@
 #include "singleCM_kernel.h"
 	
 	__host__ __device__
+int binary_search(int key, int *pix, int N)
+{
+	int st = 0;
+	int ed = N - 1;
+	while(st < ed)
+	{
+		int mid = st + ((ed - st) >> 1);
+		if(pix[mid] <= key)
+			st = mid + 1;
+		else
+			ed = mid;
+	}
+	if(pix[ed] > key)
+		return ed;
+	return -1;
+}
+	__host__ __device__
 int binary_search(int key, PIX_NODE *node, int N)
 {
 	int st = 0;
@@ -18,7 +35,7 @@ int binary_search(int key, PIX_NODE *node, int N)
 	return -1;
 }
 	__global__
-void kernel_singleCM(PIX_NODE *ref_node, int ref_N, PIX_NODE *sam_node, int sam_N, int *sam_match,int *sam_matchedCnt,int ref_offset,int sam_offset)
+void  kernel_singleCM(double *ref_ra,double *ref_dec,int *ref_pix,int ref_N,double *sam_ra,double *sam_dec,int *sam_pix,int sam_N,int *sam_match,int *sam_matchedCnt,int ref_offset,int     sam_offset)
 {
 	__shared__ int s_ref_pix[TILE_SIZE];
 	__shared__ double s_ref_ra[TILE_SIZE];
@@ -41,15 +58,15 @@ void kernel_singleCM(PIX_NODE *ref_node, int ref_N, PIX_NODE *sam_node, int sam_
 		else
 			block_sam_N = blockDim.x;
 
-		start_pix = sam_node[tid].pix;
-		end_pix = sam_node[tid + block_sam_N - 1].pix;
+		start_pix = sam_pix[tid];
+		end_pix = sam_pix[tid + block_sam_N - 1];
 
 		if(start_pix == 0)
 			start_ref_pos = 0;
 		else
-			start_ref_pos = binary_search(start_pix - 1,ref_node,ref_N);
+			start_ref_pos = binary_search(start_pix - 1,ref_pix,ref_N);
 
-		end_ref_pos = binary_search(end_pix,ref_node,ref_N);
+		end_ref_pos = binary_search(end_pix,ref_pix,ref_N);
 
 		if(end_ref_pos == -1)
 			end_ref_pos = ref_N - 1;
@@ -62,13 +79,13 @@ void kernel_singleCM(PIX_NODE *ref_node, int ref_N, PIX_NODE *sam_node, int sam_
 	if(start_ref_pos == -1 || end_ref_pos < start_ref_pos)
 		return;
 
-	int pix,cnt = 0;
-	double sam_ra,sam_dec;
+	int reg_sam_pix,cnt = 0;
+	double reg_sam_ra,reg_sam_dec;
 	if(tid < sam_N)
 	{
-		pix = sam_node[tid].pix;
-		sam_ra = sam_node[tid].ra;
-		sam_dec = sam_node[tid].dec;
+		reg_sam_pix = sam_pix[tid];
+		reg_sam_ra = sam_ra[tid];
+		reg_sam_dec = sam_dec[tid];
 		cnt = 0;
 	}
 	__syncthreads();
@@ -81,9 +98,9 @@ void kernel_singleCM(PIX_NODE *ref_node, int ref_N, PIX_NODE *sam_node, int sam_
 			int s_ref_pos = blockDim.x * k + threadIdx.x;
 			if(ref_pos <= end_ref_pos)
 			{
-				s_ref_pix[s_ref_pos] = ref_node[ref_pos].pix;
-				s_ref_ra[s_ref_pos] = ref_node[ref_pos].ra;
-				s_ref_dec[s_ref_pos] = ref_node[ref_pos].dec;
+				s_ref_pix[s_ref_pos] = ref_pix[ref_pos];
+				s_ref_ra[s_ref_pos] = ref_ra[ref_pos];
+				s_ref_dec[s_ref_pos] = ref_dec[ref_pos];
 			}
 			else
 				s_ref_pix[s_ref_pos] = -1;
@@ -93,11 +110,11 @@ void kernel_singleCM(PIX_NODE *ref_node, int ref_N, PIX_NODE *sam_node, int sam_
 			continue;
 		for(int j = 0; j < TILE_SIZE; ++j)
 		{
-			if(s_ref_pix[j] == -1 || s_ref_pix[j] > pix)
+			if(s_ref_pix[j] == -1 || s_ref_pix[j] > reg_sam_pix)
 				break;
-			if(s_ref_pix[j] < pix)
+			if(s_ref_pix[j] < reg_sam_pix)
 				continue;
-			if(s_ref_pix[j] == pix && matched(sam_ra,sam_dec,s_ref_ra[j],s_ref_dec[j],0.0056))
+			if(s_ref_pix[j] == reg_sam_pix && matched(reg_sam_ra,reg_sam_dec,s_ref_ra[j],s_ref_dec[j],0.0056))
 			{
 				cnt++;
 				if(cnt <= 5)
