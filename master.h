@@ -19,22 +19,46 @@ void master_free()
 //load sample file, compute HEALPix id for all points
 void master_load_file(char *masterFileList)
 {
-	readSamFile(masterFileList,240);
+	readSamFile(masterFileList,120);
 
-	int offset = 5000000;
-	int cores = 20;
-	int eachN = 240 / cores; //each thread is responsible for 6 files
+	/*
+	   int offset = 5000000;
+	   int cores = 20;
+	   int eachN = 240 / cores; //each thread is responsible for 6 files
 
-	omp_set_num_threads(cores);
+	   std::ios_base::sync_with_stdio(false);
+	   omp_set_num_threads(cores);
 #pragma omp parallel
+{
+int threadId = omp_get_thread_num() % cores;
+	//		for(int i = threadId * eachN; i < (threadId + 1) * eachN; ++i)
+	for(int i = 0; i < eachN; ++i)
 	{
-		int threadId = omp_get_thread_num() % cores;
-		//		for(int i = threadId * eachN; i < (threadId + 1) * eachN; ++i)
-		for(int i = 0; i < eachN; ++i)
+	int k = threadId + i * cores;
+	cout << "load  table " << k << endl;
+	readSampleData(sam_table[k],h_sam_node + k * offset,offset);
+	}
+	}
+	std::ios_base::sync_with_stdio(true);
+	*/
+	int SIZE = 1200000000;
+	int eachN = SIZE / 12 / 10; 
+	for(int k = 0; k < 3; ++k)
+	{
+#pragma omp parallel for
+		for(int i = k * 40; i < (k+1)*40; ++i)
 		{
-			int k = threadId + i * cores;
-			readSampleData(sam_table[k],h_sam_node + k * offset,offset);
-		}
+
+			FILE * fd = fopen(sam_table[i],"r");
+			if(fd == NULL)
+				printf("load file %s error!\n",sam_table[i]);
+			for(int j = 0; j < eachN; ++j)
+			{   
+				int id = i * eachN + j;
+				fscanf(fd,"%lf%lf",&h_sam_node[id].ra,&h_sam_node[id].dec);
+			}   
+			fclose(fd);
+		} 
 	}
 }
 
@@ -117,8 +141,8 @@ void master_send_sample(int worker_N)
 				len = MPI_MESSLEN;
 			else 
 				len = cnt[i] - j * MPI_MESSLEN;
-//			MPI_Send(h_sam_node + start_pos[i] + MPI_MESSLEN * j,len,mpi_node,i+1,3,MPI_COMM_WORLD);
-//			MPI_Isend(h_sam_node + start_pos[i] + MPI_MESSLEN * j,len,mpi_node,i+1,3,MPI_COMM_WORLD,&send_request[send_cnt++]);
+			//			MPI_Send(h_sam_node + start_pos[i] + MPI_MESSLEN * j,len,mpi_node,i+1,3,MPI_COMM_WORLD);
+			//			MPI_Isend(h_sam_node + start_pos[i] + MPI_MESSLEN * j,len,mpi_node,i+1,3,MPI_COMM_WORLD,&send_request[send_cnt++]);
 			MPI_Isend(h_sam_ra + start_pos[i] + MPI_MESSLEN * j,len,MPI_DOUBLE,i+1,3,MPI_COMM_WORLD,&send_request[send_cnt++]);
 			MPI_Isend(h_sam_dec + start_pos[i] + MPI_MESSLEN * j,len,MPI_DOUBLE,i+1,3,MPI_COMM_WORLD,&send_request[send_cnt++]);
 			MPI_Isend(h_sam_pix + start_pos[i] + MPI_MESSLEN * j,len,MPI_INT,i+1,3,MPI_COMM_WORLD,&send_request[send_cnt++]);

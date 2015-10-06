@@ -15,6 +15,15 @@ int readDataFile(char *fileName,double ra[],double dec[],int N)
 	for(int i = 0; i < N; ++i)
 		fscanf(fd,"%lf%lf%*d",&ra[i],&dec[i]);
 	fclose(fd);
+	/*
+	std::ios_base::sync_with_stdio(false);
+	ifstream in(fileName);
+	int tmp;
+	for(int i = 0; i < N; ++i)
+		in >> ra[i] >> dec[i] >> tmp;
+	in.close();
+	std::ios_base::sync_with_stdio(true);
+	*/
 	return 0;
 }
 
@@ -27,6 +36,20 @@ int readSampleData(char *fileName,PIX_NODE sam_node[],int N)
 		fscanf(fd,"%lf%lf%*d",&sam_node[i].ra,&sam_node[i].dec);
 	fclose(fd);
 	return 0;
+
+	/*
+	ifstream fin(fileName,ifstream::in);
+	if(!fin)
+	{
+		cout << "open file " << fileName << " error" << endl;
+		return -1;
+	}
+	int tmp;
+	for(int i = 0; i < N; ++i)
+		fin >> sam_node[i].ra >> sam_node[i].dec >> tmp;
+	fin.close();
+	return 0;
+	*/
 }
 
 int readRefFile(char * tableList,int N)

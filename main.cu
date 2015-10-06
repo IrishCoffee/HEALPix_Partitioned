@@ -18,6 +18,7 @@
 #include "values.h"
 #include "worker.h"
 #include "master.h"
+#include <fstream>
 using namespace std;
 
 int main(int argc, char* argv[])
@@ -28,24 +29,6 @@ int main(int argc, char* argv[])
 	MPI_Comm_size(MPI_COMM_WORLD,&numprocs);
 	MPI_Comm_rank(MPI_COMM_WORLD,&rank);
 	MPI_Get_processor_name(processor_name,&namelen);
-
-	//Register new data type
-	MPI_Datatype old_types[3];
-	MPI_Aint indices[3];
-	int blocklens[3];
-	blocklens[0] = 1;
-	blocklens[1] = 1;
-	blocklens[2] = 1;
-	old_types[0] = MPI_DOUBLE;
-	old_types[1] = MPI_DOUBLE;
-	old_types[2] = MPI_INT;
-
-	indices[0] = 0;
-	indices[1] = sizeof(double);
-	indices[2] = 2 * sizeof(double);
-
-	MPI_Type_struct(3,blocklens,indices,old_types,&mpi_node);
-	MPI_Type_commit(&mpi_node);
 
 
 	//MPI worker group creation
@@ -90,7 +73,7 @@ int main(int argc, char* argv[])
 
 		MPI_Barrier(MPI_COMM_WORLD);
 		gettimeofday(&start,NULL);
-		master_send_sample(num_procs - 1);
+		master_send_sample(numprocs - 1);
 		gettimeofday(&end,NULL);
 		printf("//////////// master_send_sample %.3f s\n",diffTime(start,end) * 0.001);
 		
@@ -118,7 +101,7 @@ int main(int argc, char* argv[])
 			checkCudaErrors(cudaDeviceReset());
 		}
 		printf("===========================\n");
-		readRefFile(argv[1],12);
+		readRefFile(argv[1],240);
 		//0.2B objects
 		ref_N = 200000000;
 
@@ -158,6 +141,11 @@ int main(int argc, char* argv[])
 
 		MPI_Barrier(worker_comm);
 		gettimeofday(&start,NULL);
+		worker_gather(rank);
+		gettimeofday(&end,NULL);
+		printf("%s worker_gather %.3f s\n",processor_name,diffTime(start,end) * 0.001);
+		
+		gettimeofday(&start,NULL);
 		worker_merge(rank);
 		gettimeofday(&end,NULL);
 		printf("%s worker_merge %.3f s\n",processor_name,diffTime(start,end) * 0.001);
@@ -182,15 +170,11 @@ int main(int argc, char* argv[])
 		gettimeofday(&end,NULL);
 		printf("%s worker_ownCM %.3f s \n", processor_name,diffTime(start,end) * 0.001 );
 		
-		worker_memory_free();
-		MPI_Finalize();
-		return 0;
 
 		gettimeofday(&start,NULL);
-//		worker_CM(rank);
-//		worker_CM_separateSendRecv(rank);
+		worker_CM(rank);
 		gettimeofday(&end,NULL);
-		printf("%s worker_ownCM %.3f s \n", processor_name,diffTime(start,end) * 0.001 );
+		printf("%s worker_CM %.3f s \n", processor_name,diffTime(start,end) * 0.001 );
 
 		time(&rawtime);
 		printf("%s ends : %s\n",processor_name,ctime(&rawtime));

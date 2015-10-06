@@ -3,7 +3,7 @@
 
 /* values used by worker nodes
 */
-char ref_table[12][64];
+char ref_table[240][64];
 const double search_radius = 0.0056 * pi / 180.0;
 cudaDeviceProp deviceProp;
 
@@ -28,13 +28,14 @@ double *h_ref_dup_ra,*h_ref_dup_dec;
 
 PIX_NODE *h_ref_dup_node;
 
-PIX_NODE *h_worker_ref;
-PIX_NODE *h_worker_sam;
 int worker_sam_N;
 int worker_ref_N;
 double *h_worker_sam_ra;
 double *h_worker_sam_dec;
 int *h_worker_sam_pix;
+double *h_worker_ref_ra;
+double *h_worker_ref_dec;
+int *h_worker_ref_pix;
 
 
 int pix_chunk_startPos[6];
@@ -73,5 +74,6 @@ MPI_Request send_request[6],recv_request;
 
 
 int request_node[6][5] = {{2,3,4,5,6},{1,5,6,4,3},{4,1,5,6,2},{3,6,1,2,5},{6,2,3,1,4},{5,4,2,3,1}};
+//int request_node[4][3] = {{2,3,4},{1,4,3},{4,1,2},{3,2,1}};
 #endif
 
