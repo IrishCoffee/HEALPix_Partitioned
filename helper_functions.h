@@ -7,49 +7,42 @@ double diffTime(timeval start,timeval end)
 	return (end.tv_sec - start.tv_sec) * 1000 + (end.tv_usec - start.tv_usec) * 0.001;
 }
 
-int readDataFile(char *fileName,double ra[],double dec[],int N)
+int readDataFile(char *fileName,double ra[],double dec[],int N,int ignore)
 {
 	FILE * fd = fopen(fileName,"r");
 	if(fd == NULL)
 		return -1;
-	for(int i = 0; i < N; ++i)
-		fscanf(fd,"%lf%lf%*d",&ra[i],&dec[i]);
+	if(ignore)
+	{
+		for(int i = 0; i < N; ++i)
+			fscanf(fd,"%lf%lf%*d",&ra[i],&dec[i]);
+	}
+	else
+	{
+		for(int i = 0; i < N; ++i)
+			fscanf(fd,"%lf%lf",&ra[i],&dec[i]);
+	}
 	fclose(fd);
-	/*
-	std::ios_base::sync_with_stdio(false);
-	ifstream in(fileName);
-	int tmp;
-	for(int i = 0; i < N; ++i)
-		in >> ra[i] >> dec[i] >> tmp;
-	in.close();
-	std::ios_base::sync_with_stdio(true);
-	*/
 	return 0;
 }
 
-int readSampleData(char *fileName,PIX_NODE sam_node[],int N)
+int readSampleData(char *fileName,PIX_NODE sam_node[],int N,int ignore)
 {
 	FILE * fd = fopen(fileName,"r");
 	if(fd == NULL)
 		return -1;
-	for(int i = 0; i < N; ++i)
-		fscanf(fd,"%lf%lf%*d",&sam_node[i].ra,&sam_node[i].dec);
+	if(ignore)
+	{
+		for(int i = 0; i < N; ++i)
+			fscanf(fd,"%lf%lf%*d",&sam_node[i].ra,&sam_node[i].dec);
+	}
+	else
+	{
+		for(int i = 0; i < N; ++i)
+			fscanf(fd,"%lf%lf",&sam_node[i].ra,&sam_node[i].dec);
+	}
 	fclose(fd);
 	return 0;
-
-	/*
-	ifstream fin(fileName,ifstream::in);
-	if(!fin)
-	{
-		cout << "open file " << fileName << " error" << endl;
-		return -1;
-	}
-	int tmp;
-	for(int i = 0; i < N; ++i)
-		fin >> sam_node[i].ra >> sam_node[i].dec >> tmp;
-	fin.close();
-	return 0;
-	*/
 }
 
 int readRefFile(char * tableList,int N)
@@ -75,7 +68,7 @@ int readSamFile(char *tableList,int N)
 }
 bool cmp(PIX_NODE node_a,PIX_NODE node_b)
 {
-	    return node_a.pix < node_b.pix;
+	return node_a.pix < node_b.pix;
 }
 
 
