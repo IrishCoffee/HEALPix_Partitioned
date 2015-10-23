@@ -92,7 +92,7 @@ int main(int argc, char* argv[])
 	printf("rank-%d indexSample %.3f s\n",rank,diffTime(start,end) * 0.001);
 
 	gettimeofday(&start,NULL);
-	tbb::parallel_sort(h_sam_node,h_sam_node + sam_N,cmp);
+	tbb::parallel_sort(sam_node_buffer,sam_node_buffer + sam_N,cmp);
 	gettimeofday(&end,NULL);
 	printf("rank-%d sort sample %.3f s\n",rank,diffTime(start,end) * 0.001);
 
@@ -105,13 +105,41 @@ int main(int argc, char* argv[])
 	worker_gather(rank);
 	gettimeofday(&end,NULL);
 	printf("rank-%d worker_gather %.3f s\n",rank,diffTime(start,end) * 0.001);
+	
+	gettimeofday(&start,NULL);
+	cal_samChunk(rank);
+	gettimeofday(&end,NULL);
+	printf("rank-%d cal_samChunk %.3f s\n",rank,diffTime(start,end) * 0.001);
 
 	gettimeofday(&start,NULL);
-	redistribute_R(rank);
+//	redistribute_R(rank);
+	redistribute_R_bak(rank);
 	gettimeofday(&end,NULL);
 	printf("rank-%d redistribute_R %.3f s\n",rank,diffTime(start,end) * 0.001);
 
+/*	
+	gettimeofday(&start,NULL);
+	redistribute_S(rank);
+	gettimeofday(&end,NULL);
+	printf("rank-%d redistribute_S %.3f s\n",rank,diffTime(start,end) * 0.001);
+*/	
+	gettimeofday(&start,NULL);
+	tbb::parallel_sort(h_sam_node,h_sam_node + sam_CM_N,cmp);
+	tbb::parallel_sort(h_ref_node,h_ref_node + ref_CM_N,cmp);
+	gettimeofday(&end,NULL);
+	printf("rank-%d sort sample %.3f s\n",rank,diffTime(start,end) * 0.001);
+	
+	gettimeofday(&start,NULL);
+	/*
+	if(ref_CM_N < sam_CM_N)
+		singleCM(h_ref_node,ref_CM_N,h_sam_node,sam_CM_N,rank);
+	else
+		singleCM(h_sam_node,sam_CM_N,h_ref_node,ref_CM_N,rank);
+		*/
+	singleCM(rank);
+	gettimeofday(&end,NULL);
+	printf("rank-%d singleCM %.3f s\n",rank,diffTime(start,end) * 0.001);
+
 	time(&rawtime);
 	printf("%s ends at %s\n",processor_name,ctime(&rawtime));
-
 }
