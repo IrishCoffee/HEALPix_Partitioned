@@ -434,9 +434,7 @@ void redistribute_R_bak(int rank)
 {
 	MPI_Status status;
 	int each_R_chunk_N[worker_N];
-	int each_S_chunk_N[worker_N];
 	each_R_chunk_N[rank] = Rchunk_size[rank];
-	each_S_chunk_N[rank] = Schunk_size[rank];
 
 	omp_set_num_threads(worker_N);
 	int offset = 0;
@@ -447,44 +445,25 @@ void redistribute_R_bak(int rank)
 			for(int j = 0; j < worker_N; ++j)
 			{
 				if(j != rank)
-				{
 					MPI_Recv(each_R_chunk_N + j,1,MPI_INT,j,3,MPI_COMM_WORLD,&status);
-					MPI_Recv(each_S_chunk_N + j,1,MPI_INT,j,3,MPI_COMM_WORLD,&status);
-				}
 			}
 			ref_CM_N = 0;
-			sam_CM_N = 0;
 			for(int j = 0; j < worker_N; ++j)
-			{
 				ref_CM_N += each_R_chunk_N[j];
-				sam_CM_N += each_S_chunk_N[j];
-			}
 			printf("rank-%d ref_CM_N %d sam_CM_N %d\n",rank,ref_CM_N,sam_CM_N);
 		}
 		else
-		{
 			MPI_Send(Rchunk_size + i,1,MPI_INT,i,3,MPI_COMM_WORLD);
-			MPI_Send(Schunk_size + i,1,MPI_INT,i,3,MPI_COMM_WORLD);
-		}
 	}
-
 	h_ref_node = (PIX_NODE *)malloc(sizeof(PIX_NODE) * ref_CM_N);
-	h_sam_node = (PIX_NODE *)malloc(sizeof(PIX_NODE) * sam_CM_N);
-
 	for(int i = 0; i < worker_N - 1; ++i)
 	{
 		int commID = request_node[rank][i];
 		int R_send_amount = Rchunk_size[commID];
 		int R_recv_amount = each_R_chunk_N[commID];
 
-		int S_send_amount = Schunk_size[commID];
-		int S_recv_amount = each_S_chunk_N[commID];
-
 		int R_send_ite = (R_send_amount - 1) / MPI_MESSLEN + 1;
 		int R_recv_ite = (R_recv_amount - 1) / MPI_MESSLEN + 1;
-
-		int S_send_ite = (S_send_amount - 1) / MPI_MESSLEN + 1;
-		int S_recv_ite = (S_recv_amount - 1) / MPI_MESSLEN + 1;
 
 		PIX_NODE *ref_buffer = (PIX_NODE*)malloc(sizeof(PIX_NODE) * R_send_amount);
 		transfer_ref(rank,commID,ref_buffer,Rchunk_size[commID]);
@@ -495,7 +474,6 @@ void redistribute_R_bak(int rank)
 			if(j == rank)
 				continue;
 			RstartPos += each_R_chunk_N[j];
-			SstartPos += each_S_chunk_N[j];
 		}
 
 		for(int kk = 0; kk < 2; ++kk)
@@ -513,17 +491,6 @@ void redistribute_R_bak(int rank)
 					MPI_Send(ref_buffer + j * MPI_MESSLEN,cur_N,mpi_node,commID,3,MPI_COMM_WORLD);
 					printf("rank-%d send to rank-%d R_chunk-%d\n",rank,commID,j);
 				}
-				for(int j = 0; j < S_send_ite; ++j)
-				{
-					int cur_N;
-					if(j == S_send_ite - 1)
-						cur_N = S_send_amount - j * MPI_MESSLEN;
-					else
-						cur_N = MPI_MESSLEN;
-
-					MPI_Send(sam_node_buffer + S_startPos[commID] + j * MPI_MESSLEN,cur_N,mpi_node,commID,3,MPI_COMM_WORLD);
-					printf("rank-%d send to rank-%d S_chunk-%d\n",rank,commID,j);
-				}
 			}
 			else if((kk == 0 && commID < rank) || (kk == 1 && commID > rank))
 			{
@@ -538,23 +505,14 @@ void redistribute_R_bak(int rank)
 					MPI_Recv(h_ref_node + RstartPos + j * MPI_MESSLEN,cur_N,mpi_node,commID,3,MPI_COMM_WORLD,&status);
 					printf("rank-%d recv from rank-%d R_chunk-%d\n",rank,commID,j);
 				}
-				for(int j = 0; j < S_recv_ite; ++j)
-				{
-					int cur_N;
-					if(j == S_recv_ite - 1)
-						cur_N = S_recv_amount - j * MPI_MESSLEN;
-					else
-						cur_N = MPI_MESSLEN;
-
-					MPI_Recv(h_sam_node + SstartPos + j * MPI_MESSLEN,cur_N,mpi_node,commID,3,MPI_COMM_WORLD,&status);
-					printf("rank-%d recv from rank-%d S_chunk-%d\n",rank,commID,j);
-				}
-
 			}
 		}
+		free(ref_buffer);
 	}
 	ref_CM_N -= Rchunk_size[rank];
-	sam_CM_N -= Schunk_size[rank];
+	free(h_ref_ra);
+	free(h_ref_dec);
+	free(h_ref_range);
 }
 
 

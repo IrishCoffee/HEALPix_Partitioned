@@ -61,7 +61,8 @@ int main(int argc, char* argv[])
 	ref_N = ref_file_num * ref_file_size / numprocs;
 	sam_N = sam_file_num * sam_file_size / numprocs;
 
-	cout << "ref_N " << sam_N << endl;
+	cout << "ref_N " << ref_N << endl;
+	cout << "sam_N " << sam_N << endl;
 
 	time_t rawtime;
 	time(&rawtime);
@@ -117,12 +118,11 @@ int main(int argc, char* argv[])
 	gettimeofday(&end,NULL);
 	printf("rank-%d redistribute_R %.3f s\n",rank,diffTime(start,end) * 0.001);
 
-/*	
 	gettimeofday(&start,NULL);
 	redistribute_S(rank);
 	gettimeofday(&end,NULL);
 	printf("rank-%d redistribute_S %.3f s\n",rank,diffTime(start,end) * 0.001);
-*/	
+	
 	gettimeofday(&start,NULL);
 	tbb::parallel_sort(h_sam_node,h_sam_node + sam_CM_N,cmp);
 	tbb::parallel_sort(h_ref_node,h_ref_node + ref_CM_N,cmp);
